@@ -284,7 +284,11 @@ def main() -> int:
             results.append(result)
             LOG.info("[%s] %s: %s", result.status, result.name, result.detail)
 
-        if stage == "wednesday":
+        if stage == "wednesday" and now.time() < dt_time(14, 50):
+            waiting = Result("Почта", "WAITING", "рассылка отложена до финального запуска в 14:50; до этого проверяются и обновляются только файлы")
+            results.append(waiting)
+            LOG.info("EMAIL_WAITING | финальная попытка рассылки запланирована на 14:50")
+        elif stage == "wednesday":
             from email_sender import build_email_jobs, process_email_jobs
             chart = product_date(run_date)
             email_jobs = build_email_jobs(SOURCE_ROOT / run_date.isoformat(), chart, PROJECT_DIR / "email_templates", russian_date_range(chart))
