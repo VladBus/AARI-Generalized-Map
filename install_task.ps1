@@ -8,10 +8,10 @@ $taskName = 'AARI-Generalized-Map'
 $userId = "$env:USERDOMAIN\$env:USERNAME"
 $today = Get-Date -Format 'yyyy-MM-dd'
 $command = "$env:WINDIR\System32\cmd.exe"
-$arguments = "/d /c ~BT~"$bat~BT~" --stage auto --execute"
+$arguments = '/d /c "' + $bat + '" --stage auto --execute'
 
-# All three windows use the same BAT. A repeated trigger starts a short-lived
-# process every five minutes while the expert is finishing the inputs.
+# One task and one BAT. Triggers repeat every five minutes while source files
+# are being finalized; each individual process then exits.
 $xml = @"
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo><Description>Автоматизация рассылки и публикации Обобщённой карты ААНИИ</Description></RegistrationInfo>
@@ -31,7 +31,6 @@ $xml = @"
 </Task>
 "@
 $xml = $xml.Replace('${', '$' + '{')
-$xml = $xml.Replace('~BT~', [string][char]96)
 Register-ScheduledTask -TaskName $taskName -Xml $xml -Force | Out-Null
 Write-Host "Задача '$taskName' зарегистрирована:"
 Write-Host '  Среда: 11:00–11:45 (проверка old_shore до 12:00)'
