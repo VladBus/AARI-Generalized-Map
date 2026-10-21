@@ -1,2 +1,66 @@
-# AARI-Generalized-Map
-A project designed to automate the compilation, preparation, and distribution of a weekly summary chart from the Arctic and Antarctic Research Institute (AARI) — specifically, its Center for Ice and Hydrometeorological Information (CIHI).
+# AARI-Generalized-Map — автоматизация «Обобщёнки»
+
+Автоматизация рассылки и размещения готовых результатов общей обзорной ледовой карты Арктики ААНИИ. Объединение слоёв и подготовка карт в QGIS остаются ручной работой эксперта.
+
+## Что делает программа
+
+- Проверяет ожидаемые имена файлов, наличие комплекта `.shp`, `.shx`, `.dbf`, `.prj` и грубое отклонение размера от эталонного выпуска.
+- Размещает карты и SIGRID-наборы в согласованных сетевых каталогах.
+- По средам готовит и отправляет пять писем по шаблонам `.eml` через SMTP (`email` + `smtplib`), не запуская Outlook или Thunderbird.
+- По четвергам отправляет LVP и публикует материалы сайта с задержкой в одну неделю. Один двуязычный GIF копируется в обе папки `gif.en` и `gif.ru`.
+- Пишет актуальную сводку в `STATUS.txt`, историю действий и ошибок — в `aari_generalized_map.log`. Оба файла находятся в корневой папке `ОБОБЩЕНКА_ОТПРАВКА`.
+
+Исходные материалы не удаляются. Если целевой файл отличается от исходного, он заменяется, а факт замены записывается в журнал. Резервные копии не создаются. Очевидно подозрительный размер или отсутствующий компонент блокирует соответствующее задание и попадает в статус и лог.
+
+## Подготовка на Windows
+
+Проект предполагает рабочий компьютер с доступом к сетевым ресурсам ААНИИ. Пути настраиваются как UNC в `.env`, а не через буквы дисков.
+
+```powershell
+cd E:\Programming_Work\VScode_Work\AARI-Generalized-Map
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
+```
+
+Откройте `.env` и заполните параметры SMTP: `AARI_EMAIL_ADDRESS`, `AARI_EMAIL_NAME` и `AARI_EMAIL_PASSWORD`. Пароль указывается только в локальном `.env`; не публикуйте этот файл.
+
+## Проверка и запуск
+
+Запуск `run_aari_generalized_map.bat` без параметров выполняет проверку без копирования и отправки. Для тестирования отдельного этапа можно использовать:
+
+```powershell
+.\.venv\Scripts\python.exe .\main.py --stage validate
+.\.venv\Scripts\python.exe .\main.py --stage wednesday --date 2026-10-21
+```
+
+Флаг `--execute` включает реальные копирование и отправку. До завершения испытаний используйте режим без этого флага.
+
+## Планировщик заданий Windows
+
+В проекте один файл запуска — `run_aari_generalized_map.bat` — и одна задача планировщика. Установщик `install_task.ps1` регистрирует задачу `AARI-Generalized-Map` с тремя временными окнами; все они вызывают тот же BAT:
+
+| День | Окно повторных проверок | Назначение |
+|---|---|---|
+| Среда | 11:00–11:45, каждые 5 минут | Выгрузка `old_shore` до 12:00 |
+| Среда | 14:00–14:45, каждые 5 минут | Основные файлы и пять писем |
+| Четверг | 14:00–14:45, каждые 5 минут | LVP и материалы сайта за прошлую неделю |
+
+Окна оставляют время до соответствующих сроков, а повторные короткие запуски позволяют подхватить файлы, появившиеся позже. Параллельные экземпляры запрещены. Задача использует текущую учётную запись Windows и рассчитана на запуск, когда пользователь вошёл в систему и сетевые ресурсы доступны.
+
+Установить или обновить задачу после переноса проекта:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install_task.ps1
+```
+
+## Важные соглашения
+
+- Дата папки выпуска — среда; дата карты в именах — вторник (`YYYYMMDD`). На картинках период указывается как воскресенье–вторник, например `18-20 октября 2026 года`.
+- `STATUS.txt` показывает результаты последнего запуска и основные адреса назначения. `aari_generalized_map.log` хранит историю успешных операций, замен, отправок и ошибок.
+- Программа не объединяет и не исправляет геоданные в QGIS.
+- Перед реальной отправкой и публикацией необходимо подтвердить пути и адресатов на тестовом выпуске.
+
+## English summary
+
+Windows automation for distributing already-prepared AARI Arctic overview chart products. It validates expected files and approximate sizes, copies products to configured UNC shares, sends five `.eml`-based messages over SMTP, and publishes the previous week's website products on Thursday. QGIS compilation remains manual. It uses one batch launcher, one scheduled task, and two shared operational reports.

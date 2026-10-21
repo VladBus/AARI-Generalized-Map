@@ -1,0 +1,198 @@
+"""Build and send the five mailouts using the supplied .eml templates."""
+from __future__ import annotations
+
+import hashlib
+import logging
+import mimetypes
+import re
+import smtplib
+import ssl
+from dataclasses import dataclass
+from datetime import date
+from email import policy
+from email.message import EmailMessage, Message
+from email.parser import BytesParser
+from email.utils import formataddr, getaddresses
+from pathlib import Path
+from typing import Sequence
+
+LOG = logging.getLogger("aari_generalized_map.email")
+COMPONENTS = (".shp", ".shx", ".dbf", ".prj")
+
+
+@dataclass(frozen=True)
+class Attachment:
+    path: Path
+    family: str
+
+
+@dataclass(frozen=True)
+class EmailJob:
+    key: str
+    name: str
+    template: Path
+    subject: str
+    attachments: tuple[Attachment, ...]
+
+
+@dataclass(frozen=True)
+class EmailResult:
+    name: str
+    status: str
+    detail: str
+
+
+def _components(folder: Path, stem: str, family: str) -> tuple[Attachment, ...]:
+    return tuple(Attachment(folder / f"{stem}{suffix}", family) for suffix in COMPONENTS)
+
+
+def build_email_jobs(source_folder: Path, chart_date: date, template_dir: Path, date_phrase: str) -> list[EmailJob]:
+    stamp = chart_date.strftime("%Y%m%d")
+    pic, sigrid = source_folder / "PIC", source_folder / "sigrid"
+    fsb_template = template_dir / "Шаблон ФСБ.eml"
+    if not fsb_template.is_file():
+        fsb_template = template_dir / "Шалон ФСБ.eml"  # Filename currently present in the repository.
+    jpg = (Attachment(pic / f"{stamp}.jpg", "pic.jpg"),)
+    return [
+        EmailJob("overview_jpg", "Обобщённая карта Арктики — JPG", template_dir / "Обобщенная карта Арктики.eml", f"Обобщенная карта Арктики за {date_phrase}", jpg),
+        EmailJob("sigrid_west_east", "SIGRID Запад и Восток", template_dir / "Sigrid запад и восток.eml", f"Sigrid запад и восток за {date_phrase}", _components(sigrid, f"aari_west_{stamp}_pl_a", "sigrid.west") + _components(sigrid, f"aari_east_{stamp}_pl_a", "sigrid.east")),
+        EmailJob("sigrid_arctic", "SIGRID Арктика", template_dir / "Sigrid Арктика за.eml", f"Sigrid Арктика за {date_phrase}", _components(sigrid, f"aari_arc_{stamp}_pl_a", "sigrid.arc")),
+        EmailJob("common_bmp", "Общая карта — BMP", template_dir / "Общая_bmp.eml", f"Общая_bmp за {date_phrase}", (Attachment(pic / "Общая.bmp", "pic.bmp"),)),
+        EmailJob("fsb_jpg", "ФСБ — JPG", fsb_template, f"Обобщенная карта Арктики за {date_phrase}", jpg),
+    ]
+
+
+def _parse_template(path: Path) -> Message:
+    with path.open("rb") as stream:
+        return BytesParser(policy=policy.default).parse(stream)
+
+
+def _body(template: Message) -> tuple[str, str]:
+    if template.is_multipart():
+        part = template.get_body(preferencelist=("html", "plain"))
+        return (str(part.get_content()), part.get_content_subtype()) if part else ("", "plain")
+    return str(template.get_content()), template.get_content_subtype()
+
+
+def _build_message(job: EmailJob, sender: str, sender_name: str) -> tuple[EmailMessage, list[str]]:
+    template = _parse_template(job.template)
+    recipients = [address for _name, address in getaddresses([str(v) for key in ("To", "Cc", "Bcc") for v in template.get_all(key, [])]) if address]
+    if not recipients:
+        raise ValueError(f"В шаблоне нет адресатов: {job.template.name}")
+    message = EmailMessage(policy=policy.SMTP)
+    message["From"] = formataddr((sender_name, sender)) if sender_name else sender
+    for key in ("To", "Cc", "Bcc", "Reply-To"):
+        vals = template.get_all(key, [])
+        if vals:
+            message[key] = ", ".join(str(value) for value in vals)
+    message["Subject"] = job.subject
+    text, subtype = _body(template)
+    message.set_content(text, subtype=subtype if subtype in ("plain", "html") else "plain", charset="utf-8")
+    for attachment in job.attachments:
+        mime, _ = mimetypes.guess_type(attachment.path.name)
+        major, minor = mime.split("/", 1) if mime and "/" in mime else ("application", "octet-stream")
+        message.add_attachment(attachment.path.read_bytes(), maintype=major, subtype=minor, filename=attachment.path.name)
+    return message, recipients
+
+
+def _fingerprint(job: EmailJob) -> str:
+    digest = hashlib.sha256()
+    for attachment in job.attachments:
+        digest.update(attachment.path.name.encode("utf-8") + b"\0")
+        with attachment.path.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _mail_history(log_path: Path, release_date: date, key: str) -> list[tuple[str, str]]:
+    """Read mail markers from the normal log; no separate state file is needed."""
+    matches: list[tuple[str, str]] = []
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return matches
+    for line in lines:
+        marker = re.search(r"MAIL_(SENT|ATTEMPT|FAILED_BEFORE_SEND|UNCERTAIN)\|([^|]+)\|([^|]+)\|([0-9a-f]{64})", line)
+        if marker and marker.group(2) == release_date.isoformat() and marker.group(3) == key:
+            matches.append((marker.group(1), marker.group(4)))
+    return matches
+
+
+def _validate(job: EmailJob, baselines: dict[str, dict[str, int]], min_ratio: float, max_ratio: float) -> list[str]:
+    errors: list[str] = []
+    suffixes = {a.path.suffix.lower() for a in job.attachments}
+    if suffixes.intersection(COMPONENTS) and not set(COMPONENTS).issubset(suffixes):
+        errors.append("комплект SIGRID должен содержать .shp, .shx, .dbf и .prj")
+    for item in job.attachments:
+        if not item.path.is_file():
+            errors.append(f"нет вложения {item.path.name}")
+            continue
+        size = item.path.stat().st_size
+        if size <= 0:
+            errors.append(f"пустое вложение {item.path.name}")
+            continue
+        baseline = baselines.get(item.family, {}).get(item.path.suffix.lower())
+        if baseline and not min_ratio <= size / baseline <= max_ratio:
+            errors.append(f"подозрительный размер {item.path.name}: {size:,} байт; эталон {baseline:,}")
+    if not job.template.is_file():
+        errors.append(f"нет шаблона {job.template.name}")
+    return errors
+
+
+def process_email_job(job: EmailJob, release_date: date, *, log_path: Path, dry_run: bool,
+                      smtp_server: str, smtp_port: int, sender_email: str, sender_name: str,
+                      password: str, size_baselines: dict[str, dict[str, int]],
+                      min_size_ratio: float, max_size_ratio: float, resend_changed: bool = False) -> EmailResult:
+    errors = _validate(job, size_baselines, min_size_ratio, max_size_ratio)
+    if errors:
+        return EmailResult(job.name, "BLOCKED", "; ".join(errors))
+    if not sender_email:
+        return EmailResult(job.name, "CONFIG_ERROR", "не задан AARI_EMAIL_ADDRESS в .env")
+    try:
+        message, recipients = _build_message(job, sender_email, sender_name)
+        fingerprint = _fingerprint(job)
+    except (OSError, ValueError) as exc:
+        return EmailResult(job.name, "ERROR", f"ошибка подготовки письма: {exc}")
+
+    history = _mail_history(log_path, release_date, job.key)
+    matching = [status for status, fp in history if fp == fingerprint]
+    sent_hashes = [fp for status, fp in history if status == "SENT"]
+    if "SENT" in matching:
+        return EmailResult(job.name, "ALREADY_SENT", "это письмо с такими же вложениями уже отправлено")
+    if sent_hashes and fingerprint not in sent_hashes and not resend_changed:
+        return EmailResult(job.name, "REVIEW_REQUIRED", "вложения изменились после отправки; автоматическая повторная отправка остановлена")
+    if matching and matching[-1] in ("ATTEMPT", "UNCERTAIN") and not resend_changed:
+        return EmailResult(job.name, "REVIEW_REQUIRED", "предыдущая отправка не подтверждена; проверьте почту перед повтором")
+    if dry_run:
+        return EmailResult(job.name, "DRY-RUN", f"тема: {job.subject}; адресаты: {', '.join(recipients)}; вложений: {len(job.attachments)}")
+    if not password:
+        return EmailResult(job.name, "CONFIG_ERROR", "не задан AARI_EMAIL_PASSWORD в .env")
+
+    try:
+        server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30, context=ssl.create_default_context())
+        server.login(sender_email, password)
+    except (OSError, smtplib.SMTPException) as exc:
+        LOG.error("MAIL_FAILED_BEFORE_SEND|%s|%s|%s", release_date.isoformat(), job.key, fingerprint)
+        return EmailResult(job.name, "MAIL_ERROR", f"не удалось подключиться к SMTP/авторизоваться: {exc}")
+    try:
+        LOG.info("MAIL_ATTEMPT|%s|%s|%s", release_date.isoformat(), job.key, fingerprint)
+        refused = server.send_message(message, from_addr=sender_email, to_addrs=recipients)
+        if refused:
+            LOG.error("MAIL_UNCERTAIN|%s|%s|%s", release_date.isoformat(), job.key, fingerprint)
+            return EmailResult(job.name, "REVIEW_REQUIRED", f"SMTP отклонил адресатов: {refused}; проверьте доставку вручную")
+        LOG.info("MAIL_SENT|%s|%s|%s", release_date.isoformat(), job.key, fingerprint)
+        return EmailResult(job.name, "SENT", f"передано SMTP; адресаты: {', '.join(recipients)}; вложений: {len(job.attachments)}")
+    except (OSError, smtplib.SMTPException) as exc:
+        LOG.error("MAIL_UNCERTAIN|%s|%s|%s", release_date.isoformat(), job.key, fingerprint)
+        return EmailResult(job.name, "REVIEW_REQUIRED", f"SMTP не подтвердил результат отправки, проверьте почту: {exc}")
+    finally:
+        try:
+            server.quit()
+        except (OSError, smtplib.SMTPException):
+            pass
+
+
+def process_email_jobs(jobs: Sequence[EmailJob], release_date: date, **kwargs) -> list[EmailResult]:
+    return [process_email_job(job, release_date, **kwargs) for job in jobs]
