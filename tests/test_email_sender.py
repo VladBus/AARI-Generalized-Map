@@ -190,6 +190,76 @@ class EmailTests(unittest.TestCase):
         self.assertIn("production@example.org", log)
         self.assertIn("vvbusev@aari.ru, sanovikov@aari.ru", log)
 
+    def test_live_test_suite_sends_only_to_allowlist(self):
+        """A live test suite delivers six marked messages only to approved test mailboxes."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            template = root / "template.eml"
+            template.write_text(
+                "To: production@example.org\n"
+                "Cc: copied@example.org\n"
+                "Bcc: hidden@example.org\n"
+                "Reply-To: reply@example.org\n"
+                "Subject: template\n"
+                "MIME-Version: 1.0\n"
+                "Content-Type: text/plain; charset=UTF-8\n\n"
+                "Keep the template body.\n",
+                encoding="utf-8",
+            )
+            jobs = []
+            for index in range(5):
+                attachment = root / f"attachment_{index}.bin"
+                attachment.write_bytes(f"test attachment {index}".encode("utf-8"))
+                jobs.append(
+                    EmailJob(
+                        f"live_test_{index}",
+                        f"Live test product email {index}",
+                        template,
+                        f"Product subject {index}",
+                        (Attachment(attachment, "none"),),
+                    )
+                )
+
+            with self.assertLogs("aari_generalized_map.email", level="INFO"):
+                with patch("email_sender.smtplib.SMTP_SSL") as smtp_factory:
+                    smtp = smtp_factory.return_value
+                    smtp.send_message.return_value = {}
+                    results = process_test_email_suite(
+                        jobs,
+                        date(2026, 10, 21),
+                        "Weekly report subject",
+                        "Weekly report body",
+                        dry_run=False,
+                        smtp_server="smtp.example.org",
+                        smtp_port=465,
+                        sender_email="sender@example.org",
+                        sender_name="Test sender",
+                        password="not-a-real-password",
+                        production_report_recipients=["production-report@example.org"],
+                        size_baselines={},
+                        min_size_ratio=0.35,
+                        max_size_ratio=2.5,
+                    )
+
+            self.assertEqual(len(results), 6)
+            self.assertTrue(all(result.status == "SENT" for result in results))
+            smtp_factory.assert_called_once()
+            smtp.login.assert_called_once_with("sender@example.org", "not-a-real-password")
+            self.assertEqual(smtp.send_message.call_count, 6)
+            smtp.quit.assert_called_once()
+            for call in smtp.send_message.call_args_list:
+                message = call.args[0]
+                self.assertEqual(call.kwargs["to_addrs"], list(TEST_RECIPIENTS))
+                self.assertEqual(
+                    message["To"], "vvbusev@aari.ru, sanovikov@aari.ru"
+                )
+                self.assertTrue(str(message["Subject"]).startswith("[TEST]"))
+                self.assertIsNone(message.get("Cc"))
+                self.assertIsNone(message.get("Bcc"))
+                self.assertIsNone(message.get("Reply-To"))
+                self.assertNotIn("production@example.org", str(message))
+                self.assertNotIn("hidden@example.org", str(message))
+
     def test_dry_run_does_not_send(self):
         """A dry-run produces a preview without SMTP credentials or connection."""
         with tempfile.TemporaryDirectory() as tmp:
