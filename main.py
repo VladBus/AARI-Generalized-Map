@@ -679,7 +679,6 @@ def main() -> int:
             run_date,
             report_subject,
             report_body,
-            log_path=LOG_FILE,
             dry_run=not args.send_test_email,
             smtp_server=os.getenv("AARI_SMTP_SERVER", "zmail.aari.ru"),
             smtp_port=int(os.getenv("AARI_SMTP_PORT", "465")),
