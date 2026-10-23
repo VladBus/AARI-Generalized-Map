@@ -669,7 +669,13 @@ def main() -> int:
             ]
         )
         write_status(run_date, stage, dry_run, results)
-        return 1 if report_failed or folder_result.status == "ERROR" else 0
+        report_has_errors = report_failed or folder_result.status == "ERROR"
+        LOG.info(
+            "END | results=%s | errors=%d",
+            len(results),
+            int(report_has_errors),
+        )
+        return 1 if report_has_errors else 0
 
     if stage == "validate":
         release_day = (
