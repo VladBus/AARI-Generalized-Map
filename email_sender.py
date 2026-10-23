@@ -390,7 +390,10 @@ def process_email_job(
 
     try:
         server = smtplib.SMTP_SSL(
-            smtp_server, smtp_port, timeout=30, context=_create_smtp_context(smtp_ca_file)
+            smtp_server,
+            smtp_port,
+            timeout=30,
+            context=_create_smtp_context(smtp_ca_file),
         )
         server.login(sender_email, password)
     except (OSError, smtplib.SMTPException) as exc:
@@ -578,7 +581,10 @@ def send_weekly_report(
 
     try:
         server = smtplib.SMTP_SSL(
-            smtp_server, smtp_port, timeout=30, context=_create_smtp_context(smtp_ca_file)
+            smtp_server,
+            smtp_port,
+            timeout=30,
+            context=_create_smtp_context(smtp_ca_file),
         )
         server.login(sender_email, password)
     except (OSError, smtplib.SMTPException) as exc:
@@ -815,7 +821,10 @@ def process_test_email_suite(
 
     try:
         server = smtplib.SMTP_SSL(
-            smtp_server, smtp_port, timeout=30, context=_create_smtp_context(smtp_ca_file)
+            smtp_server,
+            smtp_port,
+            timeout=30,
+            context=_create_smtp_context(smtp_ca_file),
         )
         server.login(sender_email, password)
         LOG.info(
