@@ -537,12 +537,16 @@ def write_status(
                 continue
             if line.startswith("ЭТАП: "):
                 if current_stage is not None:
+                    while current_lines and not current_lines[-1].strip():
+                        current_lines.pop()
                     previous_sections[current_stage] = current_lines
                 current_stage = line[len("ЭТАП: ") :].split("|", 1)[0].strip()
                 current_lines = [line]
             elif current_stage is not None:
                 current_lines.append(line)
         if current_stage is not None:
+            while current_lines and not current_lines[-1].strip():
+                current_lines.pop()
             previous_sections[current_stage] = current_lines
 
     mode = "DRY-RUN — без копирования/отправки" if dry_run else "РАБОЧИЙ РЕЖИМ"
