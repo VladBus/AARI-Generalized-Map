@@ -85,11 +85,7 @@ class WeeklyOperationsTests(unittest.TestCase):
                     date(2026, 10, 22),
                     "thursday",
                     True,
-                    [
-                        main.Result(
-                            "LVP_WAVE", "DRY-RUN", "4 SHP files -> LVP_WAVE"
-                        )
-                    ],
+                    [main.Result("LVP_WAVE", "DRY-RUN", "4 SHP files -> LVP_WAVE")],
                 )
                 same_release = status_path.read_text(encoding="utf-8")
                 self.assertIn("ЭТАП: validate", same_release)

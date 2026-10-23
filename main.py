@@ -517,9 +517,7 @@ def write_status(
         (
             line.partition(":")[2].split("|", 1)[0].strip()
             for line in previous_lines
-            if line.startswith(
-                ("Выпуск: ", "Дата выпуска (каталог среды): ")
-            )
+            if line.startswith(("Выпуск: ", "Дата выпуска (каталог среды): "))
         ),
         "",
     )
@@ -548,9 +546,7 @@ def write_status(
             previous_sections[current_stage] = current_lines
 
     mode = "DRY-RUN — без копирования/отправки" if dry_run else "РАБОЧИЙ РЕЖИМ"
-    stage_lines = [
-        f"ЭТАП: {stage} | {mode} | {datetime.now():%Y-%m-%d %H:%M:%S}"
-    ]
+    stage_lines = [f"ЭТАП: {stage} | {mode} | {datetime.now():%Y-%m-%d %H:%M:%S}"]
     if stage == "validate":
         issues = [result for result in results if result.status != "OK"]
         stage_lines.append(
