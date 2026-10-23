@@ -196,3 +196,86 @@ def process_email_job(job: EmailJob, release_date: date, *, log_path: Path, dry_
 
 def process_email_jobs(jobs: Sequence[EmailJob], release_date: date, **kwargs) -> list[EmailResult]:
     return [process_email_job(job, release_date, **kwargs) for job in jobs]
+
+
+def parse_report_recipients(raw: str) -> list[str]:
+    """Parse a comma- or semicolon-separated recipient list from .env."""
+    normalized = raw.replace(";", ",")
+    return [address.strip() for _name, address in getaddresses([normalized]) if address.strip()]
+
+
+def send_weekly_report(
+    subject: str,
+    body: str,
+    release_date: date,
+    *,
+    log_path: Path,
+    smtp_server: str,
+    smtp_port: int,
+    sender_email: str,
+    sender_name: str,
+    password: str,
+    recipient_list: Sequence[str],
+    dry_run: bool,
+) -> EmailResult:
+    """Send one operational report per release Wednesday, tracking delivery in the normal log."""
+    recipients = list(dict.fromkeys(address.strip() for address in recipient_list if address.strip()))
+    if not recipients:
+        return EmailResult("Еженедельный отчёт", "CONFIG_ERROR", "AARI_REPORT_RECIPIENTS не задан или не содержит адресов")
+    if not sender_email:
+        return EmailResult("Еженедельный отчёт", "CONFIG_ERROR", "не задан AARI_EMAIL_ADDRESS в .env")
+
+    fingerprint = hashlib.sha256(
+        (subject + "\0" + body + "\0" + ",".join(recipients)).encode("utf-8")
+    ).hexdigest()
+    date_text = release_date.isoformat()
+    try:
+        log_lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        log_lines = []
+
+    for line in log_lines:
+        sent = re.search(r"REPORT_SENT\|(\d{4}-\d{2}-\d{2})\|([0-9a-f]{64})", line)
+        if sent and sent.group(1) == date_text:
+            return EmailResult("Еженедельный отчёт", "ALREADY_SENT", "отчёт за эту дату уже передан SMTP")
+        uncertain = re.search(r"REPORT_UNCERTAIN\|(\d{4}-\d{2}-\d{2})\|([0-9a-f]{64})", line)
+        if uncertain and uncertain.group(1) == date_text:
+            return EmailResult("Еженедельный отчёт", "REVIEW_REQUIRED", "предыдущая передача отчёта не подтверждена; проверьте почту перед повтором")
+
+    if dry_run:
+        return EmailResult("Еженедельный отчёт", "DRY-RUN", f"тема: {subject}; получатели: {', '.join(recipients)}")
+
+    if not password:
+        return EmailResult("Еженедельный отчёт", "CONFIG_ERROR", "не задан AARI_EMAIL_PASSWORD в .env")
+
+    message = EmailMessage(policy=policy.SMTP)
+    message["From"] = formataddr((sender_name, sender_email)) if sender_name else sender_email
+    message["To"] = ", ".join(recipients)
+    message["Subject"] = subject
+    message.set_content(body, charset="utf-8")
+
+    try:
+        server = smtplib.SMTP_SSL(
+            smtp_server, smtp_port, timeout=30, context=ssl.create_default_context()
+        )
+        server.login(sender_email, password)
+    except (OSError, smtplib.SMTPException) as exc:
+        LOG.error("REPORT_FAILED_BEFORE_SEND|%s|%s", date_text, fingerprint)
+        return EmailResult("Еженедельный отчёт", "MAIL_ERROR", f"не удалось подключиться к SMTP/авторизоваться: {exc}")
+
+    try:
+        LOG.info("REPORT_ATTEMPT|%s|%s", date_text, fingerprint)
+        refused = server.send_message(message, from_addr=sender_email, to_addrs=recipients)
+        if refused:
+            LOG.error("REPORT_UNCERTAIN|%s|%s", date_text, fingerprint)
+            return EmailResult("Еженедельный отчёт", "REVIEW_REQUIRED", f"SMTP отклонил часть получателей: {refused}; проверьте доставку вручную")
+        LOG.info("REPORT_SENT|%s|%s", date_text, fingerprint)
+        return EmailResult("Еженедельный отчёт", "SENT", f"передан SMTP; получатели: {', '.join(recipients)}")
+    except (OSError, smtplib.SMTPException) as exc:
+        LOG.error("REPORT_UNCERTAIN|%s|%s", date_text, fingerprint)
+        return EmailResult("Еженедельный отчёт", "REVIEW_REQUIRED", f"SMTP не подтвердил результат отправки, проверьте почту: {exc}")
+    finally:
+        try:
+            server.quit()
+        except (OSError, smtplib.SMTPException):
+            pass
