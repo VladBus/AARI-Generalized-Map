@@ -1,3 +1,5 @@
+"""Unit tests for product email building and safe-send checks."""
+
 import tempfile
 import unittest
 from email.message import EmailMessage
@@ -15,7 +17,10 @@ from email_sender import (
 
 
 class EmailTests(unittest.TestCase):
+    """Verify email recipients, bodies, attachments, and duplicate protection."""
+
     def test_five_mailouts_and_attachment_counts(self):
+        """Build exactly five emails with the required attachment counts."""
         root = Path(r"Z:\МОРЕ\ОБОБЩЕНКА_ОТПРАВКА\2026-10-21")
         jobs = build_email_jobs(
             root, date(2026, 10, 20), Path("email_templates"), "18-20 октября 2026 года"
@@ -33,14 +38,24 @@ class EmailTests(unittest.TestCase):
         )
 
     def test_template_body_and_recipients_are_preserved(self):
+        """Keep template recipients and body text while changing the subject."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             template = root / "template.eml"
             attachment = root / "map.jpg"
-            template.write_text(
-                "To: Test User <to@example.org>\nCc: copy@example.org\nSubject: old\nMIME-Version: 1.0\nContent-Type: text/html; charset=UTF-8\n\n<p>Keep signature</p>\n",
-                encoding="utf-8",
+            template_text = "\n".join(
+                [
+                    "To: Test User <to@example.org>",
+                    "Cc: copy@example.org",
+                    "Subject: old",
+                    "MIME-Version: 1.0",
+                    "Content-Type: text/html; charset=UTF-8",
+                    "",
+                    "<p>Keep signature</p>",
+                    "",
+                ]
             )
+            template.write_text(template_text, encoding="utf-8")
             attachment.write_bytes(b"image bytes")
             job = EmailJob(
                 "test",
@@ -60,6 +75,7 @@ class EmailTests(unittest.TestCase):
             self.assertIn("Keep signature", typed_body_part.get_content())
 
     def test_dry_run_does_not_send(self):
+        """A dry-run produces a preview without SMTP credentials or connection."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             template = root / "template.eml"
@@ -89,6 +105,7 @@ class EmailTests(unittest.TestCase):
             self.assertEqual(result.status, "DRY-RUN")
 
     def test_log_markers_prevent_duplicate_send(self):
+        """Do not repeat an email already marked as sent in the log."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             template = root / "template.eml"
