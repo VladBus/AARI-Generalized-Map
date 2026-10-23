@@ -67,6 +67,8 @@
 | `--stage wednesday`      | План среды и пяти продуктовых писем                                                                   |
 | `--stage thursday`       | План LVP и публикации сайта                                                                           |
 | `--stage report`         | План недельного отчёта и папки следующего выпуска                                                     |
+| `--stage mail-test`      | Изолированная проверка пяти продуктовых писем и недельного отчёта                                     |
+| `--send-test-email`      | Только с `--stage mail-test`: отправляет шесть писем на фиксированный тестовый список                 |
 | `--stage auto`           | Выбор этапа по дню недели и времени запуска                                                           |
 | `--execute`              | **Включает реальные копирование и отправку**; использовать только после согласования рабочего запуска |
 | `--resend-changed-email` | Разрешает повторную отправку писем с изменившимися вложениями; применять только после ручной проверки |
@@ -165,7 +167,27 @@ notepad .env
 .\.venv\Scripts\python.exe .\main.py --stage report --date 2026-10-21
 ```
 
-Команды выше работают без `--execute`: это безопасные проверки плана. При их выполнении не должны копироваться продуктовые файлы, отправляться письма или создаваться папка следующего выпуска.
+### 6. Проверить готовность шести тестовых писем (без SMTP)
+
+Укажите дату существующей папки выпуска за среду. Команда проверит пять продуктовых шаблонов, вложения и структуру еженедельного отчёта. Это не отправляет письма.
+
+```powershell
+.\.venv\Scripts\python.exe .\main.py --stage mail-test --date 2026-10-21
+```
+
+### 7. Отправить тестовые письма
+
+После успешного предварительного просмотра и проверки SMTP-параметров в локальном `.env` выполните команду:
+
+```powershell
+.\.venv\Scripts\python.exe .\main.py --stage mail-test --date 2026-10-21 --send-test-email
+```
+
+Будут отправлены **шесть отдельных тестовых писем**: пять продуктовых сообщений с реальными вложениями выбранного выпуска и одно тестовое письмо еженедельного отчёта. Все шесть направляются только на фиксированные адреса `vvbusev@aari.ru` и `sanovikov@aari.ru`. В темах стоит префикс `[TEST]`, а в теле — явная пометка теста. Адресаты из рабочих шаблонов и `AARI_REPORT_RECIPIENTS` не получат эти тестовые письма.
+
+Режим `mail-test` требует явный `--date` папки выпуска за среду. Он не поддерживает `--execute`, не копирует продуктовые файлы, не создаёт папку следующего выпуска и не изменяет `STATUS.txt`; результаты пишутся в подробный журнал. Если SMTP не подтвердит результат одного из сообщений, отправка следующих остановится. В таком случае проверьте ящики перед повтором: сообщение могло дойти, даже если подтверждение потерялось.
+
+Команды выше работают без `--execute`: это безопасные проверки плана. При их выполнении не должны копироваться продуктовые файлы, отправляться письма или создаваться папка следующего выпуска. Исключение — явно указанная выше команда с `--send-test-email`, которая отправляет тестовые сообщения только на разрешённые тестовые адреса.
 
 ## 📁 Структура исходного каталога
 
@@ -219,7 +241,7 @@ notepad .env
 
 ## 🇬🇧 English summary
 
-Windows automation for distributing already-prepared AARI Arctic overview chart products. It validates expected filenames, shapefile components and approximate sizes; prepares copy jobs for network shares; builds five template-based emails; handles previous-week website material on Thursday; and maintains concise status and detailed logs. QGIS chart compilation remains a manual expert task. The application defaults to dry-run. The Windows Task Scheduler installer exists in the repository, but it has not yet been validated on the target workstation and registers a task with live `--execute` enabled.
+Windows automation for distributing already-prepared AARI Arctic overview chart products. It validates expected filenames, shapefile components and approximate sizes; prepares copy jobs for network shares; builds five template-based emails; handles previous-week website material on Thursday; and maintains concise status and detailed logs. QGIS chart compilation remains a manual expert task. The application defaults to dry-run. An isolated `mail-test` stage previews or explicitly sends six `[TEST]` messages only to `vvbusev@aari.ru` and `sanovikov@aari.ru`; it never uses production template recipients for delivery and never copies product files. The Windows Task Scheduler installer exists in the repository, but it has not yet been validated on the target workstation and registers a task with live `--execute` enabled.
 
 ---
 
