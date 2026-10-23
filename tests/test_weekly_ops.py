@@ -1,3 +1,5 @@
+"""Unit tests for weekly scheduling, reporting, and folder preparation."""
+
 import tempfile
 import unittest
 from datetime import date, datetime
@@ -9,7 +11,10 @@ from email_sender import parse_report_recipients, send_weekly_report
 
 
 class WeeklyOperationsTests(unittest.TestCase):
+    """Test weekly automation logic independently of live shares and SMTP."""
+
     def test_late_wednesday_run_retries_old_shore(self):
+        """Include the old-shore job in later Wednesday distribution runs."""
         source = Path(r"Z:\МОРЕ\ОБОБЩЕНКА_ОТПРАВКА")
         target = Path(r"\\files.aari.ru\Ice_charts")
         with patch.multiple(main, SOURCE_ROOT=source, ICE_CHARTS_ROOT=target):
@@ -21,6 +26,7 @@ class WeeklyOperationsTests(unittest.TestCase):
         )
 
     def test_auto_stage_uses_report_trigger_after_1500_wednesday(self):
+        """Select the report stage for the one-time 15:00 trigger."""
         run_day = date(2026, 10, 21)
         self.assertEqual(
             main.resolve_stage("auto", run_day, datetime(2026, 10, 21, 14, 50)),
@@ -32,6 +38,7 @@ class WeeklyOperationsTests(unittest.TestCase):
         )
 
     def test_next_week_folders_are_created_and_existing_files_preserved(self):
+        """Create missing subfolders while preserving existing expert files."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             next_pic = root / "2026-10-28" / "PIC"
@@ -48,6 +55,7 @@ class WeeklyOperationsTests(unittest.TestCase):
                 self.assertTrue((root / "2026-10-28" / name).is_dir())
 
     def test_recipients_accept_commas_semicolons_and_spaces(self):
+        """Parse the configurable weekly report recipient list."""
         self.assertEqual(
             parse_report_recipients(
                 "vvbusev@aari.ru, a.sokolov@aari.ru; sanovikov@aari.ru"
@@ -56,6 +64,7 @@ class WeeklyOperationsTests(unittest.TestCase):
         )
 
     def test_weekly_report_dry_run_does_not_connect_to_smtp(self):
+        """Generate a weekly report preview without authenticating to SMTP."""
         with tempfile.TemporaryDirectory() as tmp:
             result = send_weekly_report(
                 "Тестовый отчёт",
@@ -73,6 +82,7 @@ class WeeklyOperationsTests(unittest.TestCase):
         self.assertEqual(result.status, "DRY-RUN")
 
     def test_report_is_not_sent_twice_on_same_release_date(self):
+        """Use the log marker to suppress a duplicate weekly report."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             log = root / "run.log"
