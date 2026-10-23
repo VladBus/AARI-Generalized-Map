@@ -1,3 +1,5 @@
+"""Unit tests for copy-job source names and destination paths."""
+
 import unittest
 from datetime import date
 from pathlib import Path
@@ -6,12 +8,16 @@ import main
 
 
 class JobDefinitionTests(unittest.TestCase):
+    """Check expected weekly source and destination mapping."""
+
     def setUp(self):
+        """Define portable sample source and target paths."""
         self.source = Path(r"Z:\МОРЕ\ОБОБЩЕНКА_ОТПРАВКА")
         self.ice = Path(r"\\files.aari.ru\Ice_charts")
         self.website = Path(r"\\data.aari.ru\d0015\arctic")
 
     def test_wednesday_job_names_and_destinations(self):
+        """Map regional shapefiles and monthly general-chart files correctly."""
         with patch.multiple(main, SOURCE_ROOT=self.source, ICE_CHARTS_ROOT=self.ice):
             jobs = main.build_jobs(date(2026, 10, 21), "wednesday")
         by_name = {j.name: j for j in jobs}
@@ -23,6 +29,7 @@ class JobDefinitionTests(unittest.TestCase):
         )
 
     def test_oldshore_before_noon_uses_old_shore_source(self):
+        """Use the old-shore source folder and the chart-date suffix."""
         with patch.multiple(main, SOURCE_ROOT=self.source, ICE_CHARTS_ROOT=self.ice):
             jobs = main.build_jobs(date(2026, 10, 21), "oldshore")
         self.assertEqual(
@@ -31,6 +38,7 @@ class JobDefinitionTests(unittest.TestCase):
         )
 
     def test_thursday_jobs_use_lvp_and_previous_week_website(self):
+        """Use the current LVP release and previous week's website package."""
         with patch.multiple(
             main,
             SOURCE_ROOT=self.source,
