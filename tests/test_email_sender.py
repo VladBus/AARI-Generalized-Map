@@ -117,9 +117,7 @@ class EmailTests(unittest.TestCase):
                 test_notice=True,
             )
         self.assertEqual(recipients, list(TEST_RECIPIENTS))
-        self.assertEqual(
-            message["To"], "vvbusev@aari.ru, sanovikov@aari.ru"
-        )
+        self.assertEqual(message["To"], "vvbusev@aari.ru, sanovikov@aari.ru")
         self.assertIsNone(message.get("Cc"))
         self.assertIsNone(message.get("Bcc"))
         self.assertIsNone(message.get("Reply-To"))
@@ -161,7 +159,9 @@ class EmailTests(unittest.TestCase):
                         (Attachment(attachment, "none"),),
                     )
                 )
-            with self.assertLogs("aari_generalized_map.email", level="INFO") as captured:
+            with self.assertLogs(
+                "aari_generalized_map.email", level="INFO"
+            ) as captured:
                 with patch("email_sender.smtplib.SMTP_SSL") as smtp_factory:
                     results = process_test_email_suite(
                         jobs,
@@ -244,15 +244,15 @@ class EmailTests(unittest.TestCase):
             self.assertEqual(len(results), 6)
             self.assertTrue(all(result.status == "SENT" for result in results))
             smtp_factory.assert_called_once()
-            smtp.login.assert_called_once_with("sender@example.org", "not-a-real-password")
+            smtp.login.assert_called_once_with(
+                "sender@example.org", "not-a-real-password"
+            )
             self.assertEqual(smtp.send_message.call_count, 6)
             smtp.quit.assert_called_once()
             for call in smtp.send_message.call_args_list:
                 message = call.args[0]
                 self.assertEqual(call.kwargs["to_addrs"], list(TEST_RECIPIENTS))
-                self.assertEqual(
-                    message["To"], "vvbusev@aari.ru, sanovikov@aari.ru"
-                )
+                self.assertEqual(message["To"], "vvbusev@aari.ru, sanovikov@aari.ru")
                 self.assertTrue(str(message["Subject"]).startswith("[TEST]"))
                 self.assertIsNone(message.get("Cc"))
                 self.assertIsNone(message.get("Bcc"))

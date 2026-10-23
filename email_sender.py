@@ -155,7 +155,9 @@ def _build_message(
         ]
     else:
         recipients = list(
-            dict.fromkeys(address.strip() for address in recipient_override if address.strip())
+            dict.fromkeys(
+                address.strip() for address in recipient_override if address.strip()
+            )
         )
     if not recipients:
         raise ValueError(f"В шаблоне нет адресатов: {job.template.name}")
@@ -185,8 +187,7 @@ def _build_message(
             text = (
                 "[TEST MESSAGE — NOT FOR OPERATIONAL DISTRIBUTION]\n"
                 "This email was sent only to the approved AARI test recipients. "
-                "Production template recipients were not contacted.\n\n"
-                + text
+                "Production template recipients were not contacted.\n\n" + text
             )
     message.set_content(
         text,
@@ -608,7 +609,11 @@ def process_test_email_suite(
     LOG.info(
         "TEST_REPORT_PRODUCTION_RECIPIENTS | date=%s | configured=%s",
         release_date.isoformat(),
-        ", ".join(production_report_recipients) if production_report_recipients else "(не заданы)",
+        (
+            ", ".join(production_report_recipients)
+            if production_report_recipients
+            else "(не заданы)"
+        ),
     )
 
     if not sender_email:
@@ -749,7 +754,11 @@ def process_test_email_suite(
 
     if not password:
         return [
-            EmailResult(name, "CONFIG_ERROR", "не задан AARI_EMAIL_PASSWORD в .env; ничего не отправлено")
+            EmailResult(
+                name,
+                "CONFIG_ERROR",
+                "не задан AARI_EMAIL_PASSWORD в .env; ничего не отправлено",
+            )
             for _key, name in ordered
         ]
 
@@ -863,4 +872,3 @@ def process_test_email_suite(
                     "отправка следующих тестовых сообщений остановлена после неопределённого SMTP-результата",
                 )
     return [outcomes[key] for key, _name in ordered]
-

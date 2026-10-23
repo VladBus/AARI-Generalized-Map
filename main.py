@@ -603,7 +603,15 @@ def main() -> int:
     parser.add_argument("--date", help="Дата запуска для тестирования, YYYY-MM-DD.")
     parser.add_argument(
         "--stage",
-        choices=("auto", "validate", "oldshore", "wednesday", "thursday", "report", "mail-test"),
+        choices=(
+            "auto",
+            "validate",
+            "oldshore",
+            "wednesday",
+            "thursday",
+            "report",
+            "mail-test",
+        ),
         default="auto",
     )
     parser.add_argument(
@@ -632,11 +640,17 @@ def main() -> int:
         parser.error("--send-test-email разрешён только вместе с --stage mail-test")
     if args.stage == "mail-test":
         if not args.date:
-            parser.error("--stage mail-test требует явный --date папки выпуска (например, 2026-10-21)")
+            parser.error(
+                "--stage mail-test требует явный --date папки выпуска (например, 2026-10-21)"
+            )
         if args.execute:
-            parser.error("Для mail-test не используйте --execute; отдельный флаг --send-test-email включает только тестовую почту")
+            parser.error(
+                "Для mail-test не используйте --execute; отдельный флаг --send-test-email включает только тестовую почту"
+            )
         if run_date.weekday() != 2:
-            parser.error("--date для mail-test должен соответствовать среде — дате папки выпуска")
+            parser.error(
+                "--date для mail-test должен соответствовать среде — дате папки выпуска"
+            )
     elif args.send_test_email:
         parser.error("--send-test-email разрешён только вместе с --stage mail-test")
 
@@ -691,10 +705,17 @@ def main() -> int:
             max_size_ratio=MAX_SIZE_RATIO,
         )
         for result in results:
-            LOG.info("TEST_MAIL_RESULT | [%s] %s: %s", result.status, result.name, result.detail)
+            LOG.info(
+                "TEST_MAIL_RESULT | [%s] %s: %s",
+                result.status,
+                result.name,
+                result.detail,
+            )
         errors = [
-            result for result in results
-            if result.status in {"BLOCKED", "ERROR", "CONFIG_ERROR", "MAIL_ERROR", "REVIEW_REQUIRED"}
+            result
+            for result in results
+            if result.status
+            in {"BLOCKED", "ERROR", "CONFIG_ERROR", "MAIL_ERROR", "REVIEW_REQUIRED"}
         ]
         LOG.info(
             "TEST_MAIL_SUITE_END | date=%s | mode=%s | results=%d | errors=%d | product_files_changed=no | STATUS_changed=no",
