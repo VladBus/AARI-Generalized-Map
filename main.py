@@ -550,6 +550,145 @@ def write_status(
         f"ЭТАП: {stage} | {mode} | {datetime.now():%Y-%m-%d %H:%M:%S}"
     ]
     if stage == "validate":
+        issues = [result for result in results if result.status != "OK"]
+        stage_lines.append(
+            f"  [{'ERROR' if issues else 'OK'}] Проверка источников: "
+            f"{len(results)} групп; ошибок: {len(issues)}"
+        )
+        for result in issues:
+            detail = result.detail.replace("\\n", " ").replace("\n", " ").strip()
+            stage_lines.append(f"  [ERROR] {result.name}: {detail[:240]}")
+    elif results:
+        for result in results:
+            detail = result.detail.replace("\\n", " ").replace("\n", " ").strip()
+            if len(detail) > 260:
+                detail = detail[:257] + "..."
+            stage_lines.append(f"  [{result.status}] {result.name}: {detail}")
+    else:
+        stage_lines.append("  Нет операций в этом запуске.")
+
+    previous_sections[stage] = stage_lines
+    chart_date = product_date(release_folder_date)
+    lines = [
+        "ААНИИ / ЦЛГМИ — ОБОБЩЕНКА: КРАТКИЙ СТАТУС",
+        f"Обновлено: {datetime.now():%Y-%m-%d %H:%M:%S}",
+        (
+            f"Выпуск: {release_folder_date.isoformat()} | карта: "
+            f"{chart_date.isoformat()} | период: {russian_date_range(chart_date)}"
+        ),
+        f"Последний запуск: {stage} | {mode}",
+        f"Исходный каталог: {SOURCE_ROOT}",
+        f"Подробный журнал (INFO/WARNING/ERROR): {LOG_FILE}",
+        "",
+        section_marker,
+    ]
+    for section in previous_sections.values():
+        lines.extend(section)
+        lines.append("")
+    try:
+        STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATUS_FILE.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    except OSError as exc:
+        LOG.error("Не удалось обновить STATUS.txt (%s): %s", STATUS_FILE, exc)
+
+
+def main() -> int:
+    """Parse CLI options and run a validation, copy, or report stage."""
+    parser = argparse.ArgumentParser(
+        description="Автоматизация рассылки и публикации результатов Обобщёнки."
+    )
+    parser.add_argument("--date", help="Дата запуска для тестирования, YYYY-MM-DD.")
+    parser.add_argument(
+        "--stage",
+        choices=("auto", "validate", "oldshore", "wednesday", "thursday", "report"),
+        default="auto",
+    )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Выполнить копирование и отправку. Без флага работает dry-run.",
+    )
+    parser.add_argument(
+        "--resend-changed-email",
+        action="store_true",
+        help="Разрешить повторную отправку изменившихся вложений после проверки экспертом.",
+    )
+    args = parser.parse_args()
+    setup_logging()
+    try:
+        run_date = date.fromisoformat(args.date) if args.date else date.today()
+    except ValueError:
+        parser.error("--date должен иметь формат YYYY-MM-DD")
+    now = datetime.now()
+    stage = resolve_stage(args.stage, run_date, now) or "inactive"
+    dry_run = not args.execute
+    LOG.info("START | date=%s | stage=%s | dry_run=%s", run_date, stage, dry_run)
+    results: list[Result] = []
+
+    if stage == "report":
+        folder_result = create_next_week_template_folder(run_date, dry_run)
+        LOG.info(
+            "[%s] %s: %s",
+            folder_result.status,
+            folder_result.name,
+            folder_result.detail,
+        )
+        status_snapshot = read_status_snapshot()
+        chart = product_date(run_date)
+        subject = f"Обобщёнка: отчёт за {russian_date_range(chart)}"
+        report_body = (
+            "Еженедельный отчёт по автоматизации «Обобщёнка»\n"
+            f"Дата формирования: {datetime.now():%Y-%m-%d %H:%M:%S}\n"
+            f"Период карты: {russian_date_range(chart)}\n\n"
+            "Подготовка каталога следующего выпуска: "
+            f"[{folder_result.status}] {folder_result.detail}\n\n"
+            "Состояние основных операций (последний STATUS.txt):\n"
+            f"{status_snapshot}\n\n"
+            f"Полный журнал: {LOG_FILE}\n"
+        )
+        report_result = send_weekly_report(
+            subject,
+            report_body,
+            run_date,
+            log_path=LOG_FILE,
+            smtp_server=os.getenv("AARI_SMTP_SERVER", "zmail.aari.ru"),
+            smtp_port=int(os.getenv("AARI_SMTP_PORT", "465")),
+            sender_email=os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
+            sender_name=os.getenv("AARI_EMAIL_NAME", "").strip(),
+            password=os.getenv("AARI_EMAIL_PASSWORD", ""),
+            recipient_list=parse_report_recipients(
+                os.getenv("AARI_REPORT_RECIPIENTS", "")
+            ),
+            dry_run=dry_run,
+        )
+        LOG.info(
+            "[%s] %s: %s",
+            report_result.status,
+            report_result.name,
+            report_result.detail,
+        )
+        report_failed = report_result.status in {
+            "ERROR",
+            "CONFIG_ERROR",
+            "MAIL_ERROR",
+            "REVIEW_REQUIRED",
+        }
+        results.extend(
+            [
+                folder_result,
+                Result(report_result.name, report_result.status, report_result.detail),
+            ]
+        )
+        write_status(run_date, stage, dry_run, results)
+        report_has_errors = report_failed or folder_result.status == "ERROR"
+        LOG.info(
+            "END | results=%s | errors=%d",
+            len(results),
+            int(report_has_errors),
+        )
+        return 1 if report_has_errors else 0
+
+    if stage == "validate":
         release_day = (
             run_date if run_date.weekday() == 2 else run_date - timedelta(days=1)
         )
