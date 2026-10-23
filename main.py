@@ -595,7 +595,7 @@ def main() -> int:
             results.append(result)
             LOG.info("[%s] %s: %s", result.status, result.name, result.detail)
 
-        if stage == "wednesday" and now.time() < dt_time(14, 50):
+        if stage == "wednesday" and not dry_run and now.time() < dt_time(14, 50):
             waiting = Result(
                 "Почта",
                 "WAITING",
