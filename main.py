@@ -622,7 +622,10 @@ def main() -> int:
     parser.add_argument(
         "--send-test-email",
         action="store_true",
-        help="Только для --stage mail-test: реально отправить шесть тестовых писем на фиксированные тестовые адреса.",
+        help=(
+            "Только для --stage mail-test: реально отправить шесть тестовых писем "
+            "на фиксированные тестовые адреса."
+        ),
     )
     parser.add_argument(
         "--resend-changed-email",
@@ -645,7 +648,8 @@ def main() -> int:
             )
         if args.execute:
             parser.error(
-                "Для mail-test не используйте --execute; отдельный флаг --send-test-email включает только тестовую почту"
+                "Для mail-test не используйте --execute; "
+                "отдельный флаг --send-test-email включает только тестовую почту"
             )
         if run_date.weekday() != 2:
             parser.error(
@@ -688,7 +692,7 @@ def main() -> int:
         report_recipients = parse_report_recipients(
             os.getenv("AARI_REPORT_RECIPIENTS", "")
         )
-        results = process_test_email_suite(
+        test_results = process_test_email_suite(
             email_jobs,
             run_date,
             report_subject,
@@ -704,7 +708,7 @@ def main() -> int:
             min_size_ratio=MIN_SIZE_RATIO,
             max_size_ratio=MAX_SIZE_RATIO,
         )
-        for result in results:
+        for result in test_results:
             LOG.info(
                 "TEST_MAIL_RESULT | [%s] %s: %s",
                 result.status,
@@ -713,15 +717,18 @@ def main() -> int:
             )
         errors = [
             result
-            for result in results
+            for result in test_results
             if result.status
             in {"BLOCKED", "ERROR", "CONFIG_ERROR", "MAIL_ERROR", "REVIEW_REQUIRED"}
         ]
         LOG.info(
-            "TEST_MAIL_SUITE_END | date=%s | mode=%s | results=%d | errors=%d | product_files_changed=no | STATUS_changed=no",
+            (
+                "TEST_MAIL_SUITE_END | date=%s | mode=%s | results=%d | "
+                "errors=%d | product_files_changed=no | STATUS_changed=no"
+            ),
             run_date.isoformat(),
             "SEND_TO_TEST_ALLOWLIST" if args.send_test_email else "DRY-RUN",
-            len(results),
+            len(test_results),
             len(errors),
         )
         return 1 if errors else 0
