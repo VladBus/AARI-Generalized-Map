@@ -13,6 +13,13 @@ from datetime import date, datetime, time as dt_time, timedelta
 from pathlib import Path
 from typing import Sequence
 
+from email_sender import (
+    build_email_jobs,
+    parse_report_recipients,
+    process_email_jobs,
+    send_weekly_report,
+)
+
 try:
     from dotenv import load_dotenv
 except ImportError:  # Basic diagnostics remain available if dependencies are missing.
@@ -78,6 +85,8 @@ LOG = logging.getLogger("aari_generalized_map")
 
 @dataclass(frozen=True)
 class CopyJob:
+    """One group of source files and its target directory."""
+
     name: str
     sources: tuple[Path, ...]
     target_dir: Path
@@ -86,6 +95,8 @@ class CopyJob:
 
 @dataclass(frozen=True)
 class Result:
+    """Status and details for one copy or automation action."""
+
     name: str
     status: str
     detail: str
@@ -114,10 +125,12 @@ def product_date(release_folder_date: date) -> date:
 
 
 def release_range(chart_date: date) -> tuple[date, date]:
+    """Return the Sunday-to-Tuesday period represented by a Tuesday chart date."""
     return chart_date - timedelta(days=2), chart_date
 
 
 def russian_date_range(chart_date: date) -> str:
+    """Format the chart's Sunday-to-Tuesday period in Russian."""
     start, end = release_range(chart_date)
     months = (
         "января",
@@ -135,14 +148,19 @@ def russian_date_range(chart_date: date) -> str:
     )
     if start.year == end.year and start.month == end.month:
         return f"{start.day}-{end.day} {months[end.month - 1]} {end.year} года"
-    return f"{start.day} {months[start.month - 1]}-{end.day} {months[end.month - 1]} {end.year} года"
+    return (
+        f"{start.day} {months[start.month - 1]}-"
+        f"{end.day} {months[end.month - 1]} {end.year} года"
+    )
 
 
 def shape_components(folder: Path, stem: str) -> tuple[Path, ...]:
+    """Build the standard four-component shapefile set for a base name."""
     return tuple(folder / f"{stem}{suffix}" for suffix in COMPONENTS)
 
 
 def png_name(chart_date: date, region: str) -> str:
+    """Return the standard regional PNG name for a chart date."""
     start, end = release_range(chart_date)
     return f"{start.year}_{start.month:02d}_{start.day:02d}-{end.day:02d}_{region}.png"
 
@@ -322,6 +340,7 @@ def build_jobs(run_date: date, stage: str) -> list[CopyJob]:
 
 
 def inspect_job(job: CopyJob) -> list[str]:
+    """Check expected source presence, component sets, and approximate sizes."""
     errors: list[str] = []
     suffixes = {path.suffix.lower() for path in job.sources}
     if suffixes.intersection(COMPONENTS) and not set(COMPONENTS).issubset(suffixes):
@@ -339,12 +358,15 @@ def inspect_job(job: CopyJob) -> list[str]:
             ratio = size / baseline
             if not MIN_SIZE_RATIO <= ratio <= MAX_SIZE_RATIO:
                 errors.append(
-                    f"подозрительный размер {source.name}: {size:,} байт; эталон {baseline:,}; допустимо {MIN_SIZE_RATIO:.2f}–{MAX_SIZE_RATIO:.2f} от эталона"
+                    f"подозрительный размер {source.name}: {size:,} байт; "
+                    f"эталон {baseline:,}; допустимо "
+                    f"{MIN_SIZE_RATIO:.2f}–{MAX_SIZE_RATIO:.2f} от эталона"
                 )
     return errors
 
 
 def copy_job(job: CopyJob, dry_run: bool) -> Result:
+    """Copy one checked file group, replacing older target files if needed."""
     errors = inspect_job(job)
     if errors:
         return Result(job.name, "BLOCKED", "; ".join(errors))
@@ -368,11 +390,11 @@ def copy_job(job: CopyJob, dry_run: bool) -> Result:
             else:
                 copied += 1
                 LOG.info("COPIED | %s | %s → %s", source.name, source, target)
-        return Result(
-            job.name,
-            "OK",
-            f"скопировано: {copied}; заменено: {replaced}; без изменений: {unchanged}; каталог: {job.target_dir}",
+        detail = (
+            f"скопировано: {copied}; заменено: {replaced}; "
+            f"без изменений: {unchanged}; каталог: {job.target_dir}"
         )
+        return Result(job.name, "OK", detail)
     except OSError as exc:
         LOG.exception("COPY_ERROR | %s", job.name)
         return Result(
@@ -381,6 +403,7 @@ def copy_job(job: CopyJob, dry_run: bool) -> Result:
 
 
 def resolve_stage(requested: str, run_date: date, now: datetime) -> str | None:
+    """Select the automation stage based on the day and current time."""
     if requested != "auto":
         return requested
     if run_date.weekday() == 2:  # Wednesday
@@ -449,6 +472,7 @@ def create_next_week_template_folder(run_date: date, dry_run: bool) -> Result:
 
 
 def read_status_snapshot() -> str:
+    """Read the latest operational status for inclusion in the weekly report."""
     try:
         return STATUS_FILE.read_text(encoding="utf-8").strip()
     except OSError:
@@ -458,6 +482,7 @@ def read_status_snapshot() -> str:
 def write_status(
     run_date: date, stage: str, dry_run: bool, results: Sequence[Result]
 ) -> None:
+    """Write target paths and the latest operation outcomes to STATUS.txt."""
     lines = [
         "ААНИИ / ЦЛГМИ — ОБОБЩЕНКА: ТЕКУЩИЙ СТАТУС",
         f"Время: {datetime.now():%Y-%m-%d %H:%M:%S}",
@@ -490,6 +515,7 @@ def write_status(
 
 
 def main() -> int:
+    """Parse CLI options and run a validation, copy, or report stage."""
     parser = argparse.ArgumentParser(
         description="Автоматизация рассылки и публикации результатов Обобщёнки."
     )
@@ -536,13 +562,12 @@ def main() -> int:
             "Еженедельный отчёт по автоматизации «Обобщёнка»\n"
             f"Дата формирования: {datetime.now():%Y-%m-%d %H:%M:%S}\n"
             f"Период карты: {russian_date_range(chart)}\n\n"
-            f"Подготовка каталога следующего выпуска: [{folder_result.status}] {folder_result.detail}\n\n"
+            "Подготовка каталога следующего выпуска: "
+            f"[{folder_result.status}] {folder_result.detail}\n\n"
             "Состояние основных операций (последний STATUS.txt):\n"
             f"{status_snapshot}\n\n"
             f"Полный журнал: {LOG_FILE}\n"
         )
-        from email_sender import parse_report_recipients, send_weekly_report
-
         report_result = send_weekly_report(
             subject,
             report_body,
@@ -599,15 +624,14 @@ def main() -> int:
             waiting = Result(
                 "Почта",
                 "WAITING",
-                "рассылка отложена до финального запуска в 14:50; до этого проверяются и обновляются только файлы",
+                "рассылка отложена до финального запуска в 14:50; "
+                "до этого проверяются и обновляются только файлы",
             )
             results.append(waiting)
             LOG.info(
                 "EMAIL_WAITING | финальная попытка рассылки запланирована на 14:50"
             )
         elif stage == "wednesday":
-            from email_sender import build_email_jobs, process_email_jobs
-
             chart = product_date(run_date)
             email_jobs = build_email_jobs(
                 SOURCE_ROOT / run_date.isoformat(),
