@@ -515,9 +515,11 @@ def write_status(
 
     previous_release = next(
         (
-            line.partition(":")[2].strip()
+            line.partition(":")[2].split("|", 1)[0].strip()
             for line in previous_lines
-            if line.startswith("Дата выпуска (каталог среды): ")
+            if line.startswith(
+                ("Выпуск: ", "Дата выпуска (каталог среды): ")
+            )
         ),
         "",
     )
