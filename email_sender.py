@@ -583,7 +583,6 @@ def process_test_email_suite(
     report_subject: str,
     report_body: str,
     *,
-    log_path: Path,
     dry_run: bool,
     smtp_server: str,
     smtp_port: int,
@@ -785,7 +784,7 @@ def process_test_email_suite(
     outcomes: dict[str, EmailResult] = {}
     stopped = False
     try:
-        for index, (key, name) in enumerate(ordered):
+        for key, name in ordered:
             message, fingerprint, _attachment_count = prepared[key]
             LOG.info(
                 "TEST_MAIL_ATTEMPT | date=%s | job=%s | fingerprint=%s",
