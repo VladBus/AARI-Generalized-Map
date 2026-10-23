@@ -15,7 +15,7 @@ from email.message import EmailMessage, Message
 from email.parser import BytesParser
 from email.utils import formataddr, getaddresses
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, cast
 
 LOG = logging.getLogger("aari_generalized_map.email")
 COMPONENTS = (".shp", ".shx", ".dbf", ".prj")
@@ -100,12 +100,16 @@ def build_email_jobs(
     ]
 
 
-def _parse_template(path: Path) -> Message:
+def _parse_template(path: Path) -> EmailMessage:
+    """Parse an .eml template with the modern email content API."""
     with path.open("rb") as stream:
-        return BytesParser(policy=policy.default).parse(stream)
+        parsed = BytesParser(policy=policy.default).parse(stream)
+    # With policy.default the parser creates an EmailMessage; cast communicates
+    # that guarantee to static analyzers whose stubs expose the base Message type.
+    return cast(EmailMessage, parsed)
 
 
-def _body(template: Message) -> tuple[str, str]:
+def _body(template: EmailMessage) -> tuple[str, str]:
     if template.is_multipart():
         part = template.get_body(preferencelist=("html", "plain"))
         return (
@@ -338,9 +342,41 @@ def process_email_job(
 
 
 def process_email_jobs(
-    jobs: Sequence[EmailJob], release_date: date, **kwargs
+    jobs: Sequence[EmailJob],
+    release_date: date,
+    *,
+    log_path: Path,
+    dry_run: bool,
+    smtp_server: str,
+    smtp_port: int,
+    sender_email: str,
+    sender_name: str,
+    password: str,
+    size_baselines: dict[str, dict[str, int]],
+    min_size_ratio: float,
+    max_size_ratio: float,
+    resend_changed: bool = False,
 ) -> list[EmailResult]:
-    return [process_email_job(job, release_date, **kwargs) for job in jobs]
+    """Process all five product emails with explicit, checked SMTP options."""
+    results: list[EmailResult] = []
+    for job in jobs:
+        result = process_email_job(
+            job,
+            release_date,
+            log_path=log_path,
+            dry_run=dry_run,
+            smtp_server=smtp_server,
+            smtp_port=smtp_port,
+            sender_email=sender_email,
+            sender_name=sender_name,
+            password=password,
+            size_baselines=size_baselines,
+            min_size_ratio=min_size_ratio,
+            max_size_ratio=max_size_ratio,
+            resend_changed=resend_changed,
+        )
+        results.append(result)
+    return results
 
 
 def parse_report_recipients(raw: str) -> list[str]:
