@@ -23,10 +23,12 @@ COMPONENTS = (".shp", ".shx", ".dbf", ".prj")
 TEST_RECIPIENTS = ("vvbusev@aari.ru", "sanovikov@aari.ru")
 
 
-def _create_smtp_context(ca_file: str | None) -> ssl.SSLContext:
-    """Create a default verifying TLS context and optionally add a trusted CA file."""
+def _create_smtp_context(ca_file: str | None) -> ssl.SSLContext | None:
+    """Use BBSAT-compatible SMTP defaults unless explicit certificate validation is configured."""
     if not ca_file:
-        return ssl.create_default_context()
+        # smtplib's default context keeps TLS encryption but does not verify
+        # the server certificate; this matches the existing BBSAT implementation.
+        return None
 
     certificate_path = Path(ca_file).expanduser()
     if not certificate_path.is_file():
