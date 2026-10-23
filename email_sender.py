@@ -602,7 +602,10 @@ def process_test_email_suite(
     ]
     test_recipients = list(TEST_RECIPIENTS)
     LOG.info(
-        "TEST_MAIL_REDIRECT | date=%s | test_recipients=%s | production_template_recipients_are_never_used_for_delivery",
+        (
+            "TEST_MAIL_REDIRECT | date=%s | test_recipients=%s | "
+            "production_template_recipients_are_never_used_for_delivery"
+        ),
         release_date.isoformat(),
         ", ".join(test_recipients),
     )
@@ -654,7 +657,10 @@ def process_test_email_suite(
             )
             source_recipients[job.key] = intended_recipients
             LOG.info(
-                "TEST_MAIL_PLAN | date=%s | job=%s | subject=%s | test_recipients=%s | template_recipients=%s | attachments=%d",
+                (
+                    "TEST_MAIL_PLAN | date=%s | job=%s | subject=%s | "
+                    "test_recipients=%s | template_recipients=%s | attachments=%d"
+                ),
                 release_date.isoformat(),
                 job.key,
                 test_message["Subject"],
@@ -869,6 +875,9 @@ def process_test_email_suite(
                 outcomes[key] = EmailResult(
                     name,
                     "NOT_SENT",
-                    "отправка следующих тестовых сообщений остановлена после неопределённого SMTP-результата",
+                    (
+                        "отправка следующих тестовых сообщений остановлена после "
+                        "неопределённого SMTP-результата"
+                    ),
                 )
     return [outcomes[key] for key, _name in ordered]
