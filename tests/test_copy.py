@@ -1,3 +1,5 @@
+"""Unit tests for safe file replacement."""
+
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,7 +8,10 @@ import main
 
 
 class CopyTests(unittest.TestCase):
+    """Exercise file replacement behavior without touching network shares."""
+
     def test_existing_file_is_replaced_without_backup(self):
+        """A changed target is replaced, and no backup copy is created."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source_dir = root / "source"
