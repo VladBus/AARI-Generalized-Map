@@ -1,5 +1,6 @@
 """Unit tests for product email building and safe-send checks."""
 
+import ssl
 import tempfile
 import unittest
 from email.message import EmailMessage
@@ -215,6 +216,63 @@ class EmailTests(unittest.TestCase):
         self.assertIn("TEST_REPORT_PLAN", log)
         self.assertIn("production@example.org", log)
         self.assertIn("vvbusev@aari.ru, sanovikov@aari.ru", log)
+
+    def test_certificate_failure_stops_before_sending_any_message(self):
+        """A TLS verification failure sends none of the six prepared test messages."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            template = root / "template.eml"
+            template.write_text(
+                "To: production@example.org\n"
+                "Subject: template\n"
+                "MIME-Version: 1.0\n"
+                "Content-Type: text/plain; charset=UTF-8\n\n"
+                "Test body.\n",
+                encoding="utf-8",
+            )
+            jobs = []
+            for index in range(5):
+                attachment = root / f"attachment_{index}.bin"
+                attachment.write_bytes(f"test attachment {index}".encode("utf-8"))
+                jobs.append(
+                    EmailJob(
+                        f"tls_test_{index}",
+                        f"TLS test email {index}",
+                        template,
+                        f"Product subject {index}",
+                        (Attachment(attachment, "none"),),
+                    )
+                )
+
+            with self.assertLogs("aari_generalized_map.email", level="ERROR"):
+                with patch("email_sender.smtplib.SMTP_SSL") as smtp_factory:
+                    smtp_factory.side_effect = ssl.SSLCertVerificationError(
+                        "self-signed certificate"
+                    )
+                    results = process_test_email_suite(
+                        jobs,
+                        date(2026, 10, 21),
+                        "Weekly report subject",
+                        "Weekly report body",
+                        dry_run=False,
+                        smtp_server="smtp.example.org",
+                        smtp_port=465,
+                        sender_email="sender@example.org",
+                        sender_name="Test sender",
+                        password="not-a-real-password",
+                        production_report_recipients=["production-report@example.org"],
+                        size_baselines={},
+                        min_size_ratio=0.35,
+                        max_size_ratio=2.5,
+                    )
+
+        self.assertEqual(len(results), 6)
+        self.assertTrue(all(result.status == "MAIL_ERROR" for result in results))
+        self.assertTrue(
+            all("AARI_SMTP_CA_FILE" in result.detail for result in results)
+        )
+        smtp_factory.assert_called_once()
+        smtp_factory.return_value.send_message.assert_not_called()
 
     def test_live_test_suite_sends_only_to_allowlist(self):
         """A live test suite delivers six marked messages only to approved test mailboxes."""
