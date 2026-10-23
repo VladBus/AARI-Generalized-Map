@@ -370,10 +370,16 @@ def copy_job(job: CopyJob, dry_run: bool) -> Result:
     errors = inspect_job(job)
     if errors:
         return Result(job.name, "BLOCKED", "; ".join(errors))
+    file_details: list[str] = []
     if dry_run:
-        return Result(
-            job.name, "DRY-RUN", f"{len(job.sources)} файл(ов) → {job.target_dir}"
+        file_details = [
+            f"{source} → {job.target_dir / source.name}" for source in job.sources
+        ]
+        detail = (
+            f"{len(job.sources)} файл(ов); предварительные пути по каждому файлу:\n"
+            + "\n".join(file_details)
         )
+        return Result(job.name, "DRY-RUN", detail)
     copied, replaced, unchanged = 0, 0, 0
     try:
         job.target_dir.mkdir(parents=True, exist_ok=True)
@@ -381,18 +387,23 @@ def copy_job(job: CopyJob, dry_run: bool) -> Result:
             target = job.target_dir / source.name
             if target.is_file() and filecmp.cmp(source, target, shallow=False):
                 unchanged += 1
+                file_details.append(f"БЕЗ ИЗМЕНЕНИЙ: {source} → {target}")
                 continue
             was_present = target.exists()
-            shutil.copy2(source, target)  # Direct replacement; no extra archive/backup.
+            shutil.copy2(source, target)
             if was_present:
                 replaced += 1
+                state = "ЗАМЕНЕНО"
                 LOG.info("REPLACED | %s | %s → %s", source.name, source, target)
             else:
                 copied += 1
+                state = "СКОПИРОВАНО"
                 LOG.info("COPIED | %s | %s → %s", source.name, source, target)
+            file_details.append(f"{state}: {source} → {target}")
         detail = (
             f"скопировано: {copied}; заменено: {replaced}; "
-            f"без изменений: {unchanged}; каталог: {job.target_dir}"
+            f"без изменений: {unchanged}; каталог: {job.target_dir}\n"
+            + "\n".join(file_details)
         )
         return Result(job.name, "OK", detail)
     except OSError as exc:
@@ -482,13 +493,71 @@ def read_status_snapshot() -> str:
 def write_status(
     run_date: date, stage: str, dry_run: bool, results: Sequence[Result]
 ) -> None:
-    """Write target paths and the latest operation outcomes to STATUS.txt."""
+    """Maintain a file-by-file status summary for every stage of the current release."""
+    release_folder_date = run_date
+    if stage == "thursday" or (
+        stage == "validate" and run_date.weekday() != 2
+    ):
+        release_folder_date = run_date - timedelta(days=1)
+
+    previous_sections: dict[str, list[str]] = {}
+    try:
+        previous_lines = STATUS_FILE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        previous_lines = []
+
+    previous_release = next(
+        (
+            line.partition(":")[2].strip()
+            for line in previous_lines
+            if line.startswith("Дата выпуска (каталог среды): ")
+        ),
+        "",
+    )
+    section_marker = "РЕЗУЛЬТАТЫ ПО ЭТАПАМ ТЕКУЩЕГО ВЫПУСКА:"
+    if previous_release == release_folder_date.isoformat() and section_marker in previous_lines:
+        in_sections = False
+        current_stage: str | None = None
+        current_lines: list[str] = []
+        for line in previous_lines:
+            if line == section_marker:
+                in_sections = True
+                continue
+            if not in_sections:
+                continue
+            if line.startswith("ЭТАП: "):
+                if current_stage is not None:
+                    previous_sections[current_stage] = current_lines
+                current_stage = line[len("ЭТАП: "):].split("|", 1)[0].strip()
+                current_lines = [line]
+            elif current_stage is not None:
+                current_lines.append(line)
+        if current_stage is not None:
+            previous_sections[current_stage] = current_lines
+
+    mode = "ПРОВЕРКА БЕЗ ЗАПИСИ" if dry_run else "РАБОЧИЙ РЕЖИМ"
+    stage_lines = [
+        f"ЭТАП: {stage} | режим: {mode} | запуск: {datetime.now():%Y-%m-%d %H:%M:%S}"
+    ]
+    if results:
+        for result in results:
+            stage_lines.append(f"  [{result.status}] {result.name}")
+            detail_lines = result.detail.splitlines()
+            if detail_lines:
+                stage_lines.extend(f"      {line}" for line in detail_lines)
+            else:
+                stage_lines.append("      Подробности не указаны.")
+    else:
+        stage_lines.append("  Нет действий: запуск не попал в плановое окно.")
+    previous_sections[stage] = stage_lines
+
     lines = [
         "ААНИИ / ЦЛГМИ — ОБОБЩЕНКА: ТЕКУЩИЙ СТАТУС",
-        f"Время: {datetime.now():%Y-%m-%d %H:%M:%S}",
-        f"Дата рабочего каталога: {run_date.isoformat()}",
-        f"Этап: {stage}",
-        f"Режим: {'ПРОВЕРКА БЕЗ ЗАПИСИ' if dry_run else 'РАБОЧИЙ'}",
+        f"Время обновления: {datetime.now():%Y-%m-%d %H:%M:%S}",
+        f"Дата выпуска (каталог среды): {release_folder_date.isoformat()}",
+        f"Дата последнего запуска: {run_date.isoformat()}",
+        f"Последний этап: {stage}",
+        f"Режим последнего запуска: {mode}",
         "",
         "КУДА ВЫКЛАДЫВАЮТСЯ ФАЙЛЫ:",
         f"МОРЕ: {MORE_ROOT}",
@@ -500,16 +569,14 @@ def write_status(
         f"Сайт: {WEBSITE_ROOT}",
         f"Журнал: {LOG_FILE}",
         "",
-        "РЕЗУЛЬТАТ ПОСЛЕДНЕГО ЗАПУСКА:",
+        section_marker,
     ]
-    lines.extend(
-        f"[{result.status}] {result.name}: {result.detail}" for result in results
-    )
-    if not results:
-        lines.append("Нет действий: запуск не попал в среднее/четверговое окно.")
+    for section in previous_sections.values():
+        lines.extend(section)
+        lines.append("")
     try:
         STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        STATUS_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        STATUS_FILE.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     except OSError as exc:
         LOG.error("Не удалось обновить STATUS.txt (%s): %s", STATUS_FILE, exc)
 
@@ -595,6 +662,13 @@ def main() -> int:
             "MAIL_ERROR",
             "REVIEW_REQUIRED",
         }
+        results.extend(
+            [
+                folder_result,
+                Result(report_result.name, report_result.status, report_result.detail),
+            ]
+        )
+        write_status(run_date, stage, dry_run, results)
         return 1 if report_failed or folder_result.status == "ERROR" else 0
 
     if stage == "validate":
@@ -610,7 +684,11 @@ def main() -> int:
                     (
                         "; ".join(errors)
                         if errors
-                        else f"файлы проверены: {len(job.sources)}"
+                        else "Проверены источники и целевые пути:\\n"
+                        + "\\n".join(
+                            f"{source} → {job.target_dir / source.name}"
+                            for source in job.sources
+                        )
                     ),
                 )
             )
