@@ -55,17 +55,29 @@ class WeeklyOperationsTests(unittest.TestCase):
                 self.assertTrue((root / "2026-10-28" / name).is_dir())
 
     def test_status_accumulates_stages_for_one_release_and_resets_next_week(self):
-        """Keep file-level results for all stages until a new release begins."""
+        """Keep status compact and retain only stages belonging to this release."""
         with tempfile.TemporaryDirectory() as tmp:
             status_path = Path(tmp) / "STATUS.txt"
             with patch.object(main, "STATUS_FILE", status_path):
+                main.write_status(
+                    date(2026, 10, 21),
+                    "validate",
+                    True,
+                    [
+                        main.Result(
+                            "Overview JPG",
+                            "OK",
+                            r"\\very-long\\source\\path\\map.jpg -> \\very-long\\target\\map.jpg",
+                        )
+                    ],
+                )
                 main.write_status(
                     date(2026, 10, 21),
                     "wednesday",
                     True,
                     [
                         main.Result(
-                            "Overview JPG", "DRY-RUN", "source.jpg -> target/source.jpg"
+                            "Overview JPG", "DRY-RUN", "1 JPG -> target directory"
                         )
                     ],
                 )
@@ -75,15 +87,19 @@ class WeeklyOperationsTests(unittest.TestCase):
                     True,
                     [
                         main.Result(
-                            "LVP_WAVE", "DRY-RUN", "source.shp -> target/source.shp"
+                            "LVP_WAVE", "DRY-RUN", "4 SHP files -> LVP_WAVE"
                         )
                     ],
                 )
                 same_release = status_path.read_text(encoding="utf-8")
+                self.assertIn("ЭТАП: validate", same_release)
+                self.assertIn("Проверка источников: 1 групп; ошибок: 0", same_release)
                 self.assertIn("ЭТАП: wednesday", same_release)
                 self.assertIn("ЭТАП: thursday", same_release)
-                self.assertIn("source.jpg", same_release)
-                self.assertIn("source.shp", same_release)
+                self.assertIn("1 JPG -> target directory", same_release)
+                self.assertIn("4 SHP files -> LVP_WAVE", same_release)
+                self.assertNotIn("very-long", same_release)
+                self.assertNotIn("map.jpg", same_release)
 
                 main.write_status(
                     date(2026, 10, 28),
@@ -94,7 +110,7 @@ class WeeklyOperationsTests(unittest.TestCase):
                 next_release = status_path.read_text(encoding="utf-8")
                 self.assertIn("Дата выпуска (каталог среды): 2026-10-28", next_release)
                 self.assertNotIn("ЭТАП: thursday", next_release)
-                self.assertNotIn("source.jpg", next_release)
+                self.assertNotIn("target directory", next_release)
 
     def test_recipients_accept_commas_semicolons_and_spaces(self):
         """Parse the configurable weekly report recipient list."""
