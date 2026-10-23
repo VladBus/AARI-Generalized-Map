@@ -11,7 +11,7 @@ import ssl
 from dataclasses import dataclass
 from datetime import date
 from email import policy
-from email.message import EmailMessage, Message
+from email.message import EmailMessage
 from email.parser import BytesParser
 from email.utils import formataddr, getaddresses
 from pathlib import Path
@@ -167,7 +167,10 @@ def _fingerprint(job: EmailJob) -> str:
     for attachment in job.attachments:
         digest.update(attachment.path.name.encode("utf-8") + b"\0")
         with attachment.path.open("rb") as stream:
-            for block in iter(lambda: stream.read(1024 * 1024), b""):
+            while True:
+                block = stream.read(1024 * 1024)
+                if not block:
+                    break
                 digest.update(block)
         digest.update(b"\0")
     return digest.hexdigest()
