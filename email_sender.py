@@ -292,7 +292,8 @@ def process_email_job(
             job.name,
             "DRY-RUN",
             f"тема: {job.subject}; адресаты: {', '.join(recipients)}; "
-            f"вложений: {len(job.attachments)}",
+            f"вложения ({len(job.attachments)}): "
+            + "; ".join(str(item.path) for item in job.attachments),
         )
     if not password:
         return EmailResult(
@@ -339,7 +340,10 @@ def process_email_job(
         return EmailResult(
             job.name,
             "SENT",
-            f"передано SMTP; адресаты: {', '.join(recipients)}; вложений: {len(job.attachments)}",
+            f"передано SMTP; тема: {job.subject}; "
+            f"адресаты: {', '.join(recipients)}; "
+            f"вложения ({len(job.attachments)}): "
+            + "; ".join(str(item.path) for item in job.attachments),
         )
     except (OSError, smtplib.SMTPException) as exc:
         LOG.error(
