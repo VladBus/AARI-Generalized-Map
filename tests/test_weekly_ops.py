@@ -108,7 +108,7 @@ class WeeklyOperationsTests(unittest.TestCase):
                     [main.Result("Next release", "DRY-RUN", "next-week file")],
                 )
                 next_release = status_path.read_text(encoding="utf-8")
-                self.assertIn("Дата выпуска (каталог среды): 2026-10-28", next_release)
+                self.assertIn("Выпуск: 2026-10-28", next_release)
                 self.assertNotIn("ЭТАП: thursday", next_release)
                 self.assertNotIn("target directory", next_release)
 
