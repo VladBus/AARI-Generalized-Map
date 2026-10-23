@@ -287,13 +287,23 @@ def process_email_job(
             "REVIEW_REQUIRED",
             "предыдущая отправка не подтверждена; проверьте почту перед повтором",
         )
+    LOG.info(
+        "MAIL_PLAN | date=%s | job=%s | subject=%s | recipients=%s | attachments=%d",
+        release_date.isoformat(),
+        job.key,
+        job.subject,
+        ", ".join(recipients),
+        len(job.attachments),
+    )
+    for item in job.attachments:
+        LOG.info("MAIL_ATTACHMENT | job=%s | %s", job.key, item.path)
+
     if dry_run:
         return EmailResult(
             job.name,
             "DRY-RUN",
             f"тема: {job.subject}; адресаты: {', '.join(recipients)}; "
-            f"вложения ({len(job.attachments)}): "
-            + "; ".join(str(item.path) for item in job.attachments),
+            f"вложений: {len(job.attachments)}",
         )
     if not password:
         return EmailResult(
@@ -342,8 +352,7 @@ def process_email_job(
             "SENT",
             f"передано SMTP; тема: {job.subject}; "
             f"адресаты: {', '.join(recipients)}; "
-            f"вложения ({len(job.attachments)}): "
-            + "; ".join(str(item.path) for item in job.attachments),
+            f"вложений: {len(job.attachments)}",
         )
     except (OSError, smtplib.SMTPException) as exc:
         LOG.error(
