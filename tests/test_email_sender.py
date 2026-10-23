@@ -3,7 +3,7 @@
 import tempfile
 import unittest
 from email.message import EmailMessage
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from typing import cast
 from datetime import date
 from pathlib import Path
@@ -28,7 +28,7 @@ class EmailTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             ca_file = Path(tmp) / "aari-ca.pem"
             ca_file.write_text("test certificate placeholder", encoding="utf-8")
-            expected_context = object()
+            expected_context = Mock()
             with patch(
                 "email_sender.ssl.create_default_context",
                 return_value=expected_context,
@@ -36,7 +36,10 @@ class EmailTests(unittest.TestCase):
                 actual_context = _create_smtp_context(str(ca_file))
 
         self.assertIs(actual_context, expected_context)
-        create_context.assert_called_once_with(cafile=str(ca_file))
+        create_context.assert_called_once_with()
+        expected_context.load_verify_locations.assert_called_once_with(
+            cafile=str(ca_file)
+        )
 
     def test_missing_ca_file_fails_before_smtp_connection(self):
         """Reject a configured CA path that does not exist."""
