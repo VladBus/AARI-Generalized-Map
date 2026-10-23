@@ -1,4 +1,5 @@
 """Build and send the five mailouts using the supplied .eml templates."""
+
 from __future__ import annotations
 
 import hashlib
@@ -43,22 +44,59 @@ class EmailResult:
 
 
 def _components(folder: Path, stem: str, family: str) -> tuple[Attachment, ...]:
-    return tuple(Attachment(folder / f"{stem}{suffix}", family) for suffix in COMPONENTS)
+    return tuple(
+        Attachment(folder / f"{stem}{suffix}", family) for suffix in COMPONENTS
+    )
 
 
-def build_email_jobs(source_folder: Path, chart_date: date, template_dir: Path, date_phrase: str) -> list[EmailJob]:
+def build_email_jobs(
+    source_folder: Path, chart_date: date, template_dir: Path, date_phrase: str
+) -> list[EmailJob]:
     stamp = chart_date.strftime("%Y%m%d")
     pic, sigrid = source_folder / "PIC", source_folder / "sigrid"
     fsb_template = template_dir / "Шаблон ФСБ.eml"
     if not fsb_template.is_file():
-        fsb_template = template_dir / "Шалон ФСБ.eml"  # Filename currently present in the repository.
+        fsb_template = (
+            template_dir / "Шалон ФСБ.eml"
+        )  # Filename currently present in the repository.
     jpg = (Attachment(pic / f"{stamp}.jpg", "pic.jpg"),)
     return [
-        EmailJob("overview_jpg", "Обобщённая карта Арктики — JPG", template_dir / "Обобщенная карта Арктики.eml", f"Обобщенная карта Арктики за {date_phrase}", jpg),
-        EmailJob("sigrid_west_east", "SIGRID Запад и Восток", template_dir / "Sigrid запад и восток.eml", f"Sigrid запад и восток за {date_phrase}", _components(sigrid, f"aari_west_{stamp}_pl_a", "sigrid.west") + _components(sigrid, f"aari_east_{stamp}_pl_a", "sigrid.east")),
-        EmailJob("sigrid_arctic", "SIGRID Арктика", template_dir / "Sigrid Арктика за.eml", f"Sigrid Арктика за {date_phrase}", _components(sigrid, f"aari_arc_{stamp}_pl_a", "sigrid.arc")),
-        EmailJob("common_bmp", "Общая карта — BMP", template_dir / "Общая_bmp.eml", f"Общая_bmp за {date_phrase}", (Attachment(pic / "Общая.bmp", "pic.bmp"),)),
-        EmailJob("fsb_jpg", "ФСБ — JPG", fsb_template, f"Обобщенная карта Арктики за {date_phrase}", jpg),
+        EmailJob(
+            "overview_jpg",
+            "Обобщённая карта Арктики — JPG",
+            template_dir / "Обобщенная карта Арктики.eml",
+            f"Обобщенная карта Арктики за {date_phrase}",
+            jpg,
+        ),
+        EmailJob(
+            "sigrid_west_east",
+            "SIGRID Запад и Восток",
+            template_dir / "Sigrid запад и восток.eml",
+            f"Sigrid запад и восток за {date_phrase}",
+            _components(sigrid, f"aari_west_{stamp}_pl_a", "sigrid.west")
+            + _components(sigrid, f"aari_east_{stamp}_pl_a", "sigrid.east"),
+        ),
+        EmailJob(
+            "sigrid_arctic",
+            "SIGRID Арктика",
+            template_dir / "Sigrid Арктика за.eml",
+            f"Sigrid Арктика за {date_phrase}",
+            _components(sigrid, f"aari_arc_{stamp}_pl_a", "sigrid.arc"),
+        ),
+        EmailJob(
+            "common_bmp",
+            "Общая карта — BMP",
+            template_dir / "Общая_bmp.eml",
+            f"Общая_bmp за {date_phrase}",
+            (Attachment(pic / "Общая.bmp", "pic.bmp"),),
+        ),
+        EmailJob(
+            "fsb_jpg",
+            "ФСБ — JPG",
+            fsb_template,
+            f"Обобщенная карта Арктики за {date_phrase}",
+            jpg,
+        ),
     ]
 
 
@@ -70,13 +108,25 @@ def _parse_template(path: Path) -> Message:
 def _body(template: Message) -> tuple[str, str]:
     if template.is_multipart():
         part = template.get_body(preferencelist=("html", "plain"))
-        return (str(part.get_content()), part.get_content_subtype()) if part else ("", "plain")
+        return (
+            (str(part.get_content()), part.get_content_subtype())
+            if part
+            else ("", "plain")
+        )
     return str(template.get_content()), template.get_content_subtype()
 
 
-def _build_message(job: EmailJob, sender: str, sender_name: str) -> tuple[EmailMessage, list[str]]:
+def _build_message(
+    job: EmailJob, sender: str, sender_name: str
+) -> tuple[EmailMessage, list[str]]:
     template = _parse_template(job.template)
-    recipients = [address for _name, address in getaddresses([str(v) for key in ("To", "Cc", "Bcc") for v in template.get_all(key, [])]) if address]
+    recipients = [
+        address
+        for _name, address in getaddresses(
+            [str(v) for key in ("To", "Cc", "Bcc") for v in template.get_all(key, [])]
+        )
+        if address
+    ]
     if not recipients:
         raise ValueError(f"В шаблоне нет адресатов: {job.template.name}")
     message = EmailMessage(policy=policy.SMTP)
@@ -87,11 +137,24 @@ def _build_message(job: EmailJob, sender: str, sender_name: str) -> tuple[EmailM
             message[key] = ", ".join(str(value) for value in vals)
     message["Subject"] = job.subject
     text, subtype = _body(template)
-    message.set_content(text, subtype=subtype if subtype in ("plain", "html") else "plain", charset="utf-8")
+    message.set_content(
+        text,
+        subtype=subtype if subtype in ("plain", "html") else "plain",
+        charset="utf-8",
+    )
     for attachment in job.attachments:
         mime, _ = mimetypes.guess_type(attachment.path.name)
-        major, minor = mime.split("/", 1) if mime and "/" in mime else ("application", "octet-stream")
-        message.add_attachment(attachment.path.read_bytes(), maintype=major, subtype=minor, filename=attachment.path.name)
+        major, minor = (
+            mime.split("/", 1)
+            if mime and "/" in mime
+            else ("application", "octet-stream")
+        )
+        message.add_attachment(
+            attachment.path.read_bytes(),
+            maintype=major,
+            subtype=minor,
+            filename=attachment.path.name,
+        )
     return message, recipients
 
 
@@ -106,7 +169,9 @@ def _fingerprint(job: EmailJob) -> str:
     return digest.hexdigest()
 
 
-def _mail_history(log_path: Path, release_date: date, key: str) -> list[tuple[str, str]]:
+def _mail_history(
+    log_path: Path, release_date: date, key: str
+) -> list[tuple[str, str]]:
     """Read mail markers from the normal log; no separate state file is needed."""
     matches: list[tuple[str, str]] = []
     try:
@@ -114,13 +179,25 @@ def _mail_history(log_path: Path, release_date: date, key: str) -> list[tuple[st
     except OSError:
         return matches
     for line in lines:
-        marker = re.search(r"MAIL_(SENT|ATTEMPT|FAILED_BEFORE_SEND|UNCERTAIN)\|([^|]+)\|([^|]+)\|([0-9a-f]{64})", line)
-        if marker and marker.group(2) == release_date.isoformat() and marker.group(3) == key:
+        marker = re.search(
+            r"MAIL_(SENT|ATTEMPT|FAILED_BEFORE_SEND|UNCERTAIN)\|([^|]+)\|([^|]+)\|([0-9a-f]{64})",
+            line,
+        )
+        if (
+            marker
+            and marker.group(2) == release_date.isoformat()
+            and marker.group(3) == key
+        ):
             matches.append((marker.group(1), marker.group(4)))
     return matches
 
 
-def _validate(job: EmailJob, baselines: dict[str, dict[str, int]], min_ratio: float, max_ratio: float) -> list[str]:
+def _validate(
+    job: EmailJob,
+    baselines: dict[str, dict[str, int]],
+    min_ratio: float,
+    max_ratio: float,
+) -> list[str]:
     errors: list[str] = []
     suffixes = {a.path.suffix.lower() for a in job.attachments}
     if suffixes.intersection(COMPONENTS) and not set(COMPONENTS).issubset(suffixes):
@@ -135,21 +212,37 @@ def _validate(job: EmailJob, baselines: dict[str, dict[str, int]], min_ratio: fl
             continue
         baseline = baselines.get(item.family, {}).get(item.path.suffix.lower())
         if baseline and not min_ratio <= size / baseline <= max_ratio:
-            errors.append(f"подозрительный размер {item.path.name}: {size:,} байт; эталон {baseline:,}")
+            errors.append(
+                f"подозрительный размер {item.path.name}: {size:,} байт; эталон {baseline:,}"
+            )
     if not job.template.is_file():
         errors.append(f"нет шаблона {job.template.name}")
     return errors
 
 
-def process_email_job(job: EmailJob, release_date: date, *, log_path: Path, dry_run: bool,
-                      smtp_server: str, smtp_port: int, sender_email: str, sender_name: str,
-                      password: str, size_baselines: dict[str, dict[str, int]],
-                      min_size_ratio: float, max_size_ratio: float, resend_changed: bool = False) -> EmailResult:
+def process_email_job(
+    job: EmailJob,
+    release_date: date,
+    *,
+    log_path: Path,
+    dry_run: bool,
+    smtp_server: str,
+    smtp_port: int,
+    sender_email: str,
+    sender_name: str,
+    password: str,
+    size_baselines: dict[str, dict[str, int]],
+    min_size_ratio: float,
+    max_size_ratio: float,
+    resend_changed: bool = False,
+) -> EmailResult:
     errors = _validate(job, size_baselines, min_size_ratio, max_size_ratio)
     if errors:
         return EmailResult(job.name, "BLOCKED", "; ".join(errors))
     if not sender_email:
-        return EmailResult(job.name, "CONFIG_ERROR", "не задан AARI_EMAIL_ADDRESS в .env")
+        return EmailResult(
+            job.name, "CONFIG_ERROR", "не задан AARI_EMAIL_ADDRESS в .env"
+        )
     try:
         message, recipients = _build_message(job, sender_email, sender_name)
         fingerprint = _fingerprint(job)
@@ -160,33 +253,83 @@ def process_email_job(job: EmailJob, release_date: date, *, log_path: Path, dry_
     matching = [status for status, fp in history if fp == fingerprint]
     sent_hashes = [fp for status, fp in history if status == "SENT"]
     if "SENT" in matching:
-        return EmailResult(job.name, "ALREADY_SENT", "это письмо с такими же вложениями уже отправлено")
+        return EmailResult(
+            job.name, "ALREADY_SENT", "это письмо с такими же вложениями уже отправлено"
+        )
     if sent_hashes and fingerprint not in sent_hashes and not resend_changed:
-        return EmailResult(job.name, "REVIEW_REQUIRED", "вложения изменились после отправки; автоматическая повторная отправка остановлена")
+        return EmailResult(
+            job.name,
+            "REVIEW_REQUIRED",
+            "вложения изменились после отправки; автоматическая повторная отправка остановлена",
+        )
     if matching and matching[-1] in ("ATTEMPT", "UNCERTAIN") and not resend_changed:
-        return EmailResult(job.name, "REVIEW_REQUIRED", "предыдущая отправка не подтверждена; проверьте почту перед повтором")
+        return EmailResult(
+            job.name,
+            "REVIEW_REQUIRED",
+            "предыдущая отправка не подтверждена; проверьте почту перед повтором",
+        )
     if dry_run:
-        return EmailResult(job.name, "DRY-RUN", f"тема: {job.subject}; адресаты: {', '.join(recipients)}; вложений: {len(job.attachments)}")
+        return EmailResult(
+            job.name,
+            "DRY-RUN",
+            f"тема: {job.subject}; адресаты: {', '.join(recipients)}; вложений: {len(job.attachments)}",
+        )
     if not password:
-        return EmailResult(job.name, "CONFIG_ERROR", "не задан AARI_EMAIL_PASSWORD в .env")
+        return EmailResult(
+            job.name, "CONFIG_ERROR", "не задан AARI_EMAIL_PASSWORD в .env"
+        )
 
     try:
-        server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30, context=ssl.create_default_context())
+        server = smtplib.SMTP_SSL(
+            smtp_server, smtp_port, timeout=30, context=ssl.create_default_context()
+        )
         server.login(sender_email, password)
     except (OSError, smtplib.SMTPException) as exc:
-        LOG.error("MAIL_FAILED_BEFORE_SEND|%s|%s|%s", release_date.isoformat(), job.key, fingerprint)
-        return EmailResult(job.name, "MAIL_ERROR", f"не удалось подключиться к SMTP/авторизоваться: {exc}")
+        LOG.error(
+            "MAIL_FAILED_BEFORE_SEND|%s|%s|%s",
+            release_date.isoformat(),
+            job.key,
+            fingerprint,
+        )
+        return EmailResult(
+            job.name,
+            "MAIL_ERROR",
+            f"не удалось подключиться к SMTP/авторизоваться: {exc}",
+        )
     try:
-        LOG.info("MAIL_ATTEMPT|%s|%s|%s", release_date.isoformat(), job.key, fingerprint)
-        refused = server.send_message(message, from_addr=sender_email, to_addrs=recipients)
+        LOG.info(
+            "MAIL_ATTEMPT|%s|%s|%s", release_date.isoformat(), job.key, fingerprint
+        )
+        refused = server.send_message(
+            message, from_addr=sender_email, to_addrs=recipients
+        )
         if refused:
-            LOG.error("MAIL_UNCERTAIN|%s|%s|%s", release_date.isoformat(), job.key, fingerprint)
-            return EmailResult(job.name, "REVIEW_REQUIRED", f"SMTP отклонил адресатов: {refused}; проверьте доставку вручную")
+            LOG.error(
+                "MAIL_UNCERTAIN|%s|%s|%s",
+                release_date.isoformat(),
+                job.key,
+                fingerprint,
+            )
+            return EmailResult(
+                job.name,
+                "REVIEW_REQUIRED",
+                f"SMTP отклонил адресатов: {refused}; проверьте доставку вручную",
+            )
         LOG.info("MAIL_SENT|%s|%s|%s", release_date.isoformat(), job.key, fingerprint)
-        return EmailResult(job.name, "SENT", f"передано SMTP; адресаты: {', '.join(recipients)}; вложений: {len(job.attachments)}")
+        return EmailResult(
+            job.name,
+            "SENT",
+            f"передано SMTP; адресаты: {', '.join(recipients)}; вложений: {len(job.attachments)}",
+        )
     except (OSError, smtplib.SMTPException) as exc:
-        LOG.error("MAIL_UNCERTAIN|%s|%s|%s", release_date.isoformat(), job.key, fingerprint)
-        return EmailResult(job.name, "REVIEW_REQUIRED", f"SMTP не подтвердил результат отправки, проверьте почту: {exc}")
+        LOG.error(
+            "MAIL_UNCERTAIN|%s|%s|%s", release_date.isoformat(), job.key, fingerprint
+        )
+        return EmailResult(
+            job.name,
+            "REVIEW_REQUIRED",
+            f"SMTP не подтвердил результат отправки, проверьте почту: {exc}",
+        )
     finally:
         try:
             server.quit()
@@ -194,14 +337,20 @@ def process_email_job(job: EmailJob, release_date: date, *, log_path: Path, dry_
             pass
 
 
-def process_email_jobs(jobs: Sequence[EmailJob], release_date: date, **kwargs) -> list[EmailResult]:
+def process_email_jobs(
+    jobs: Sequence[EmailJob], release_date: date, **kwargs
+) -> list[EmailResult]:
     return [process_email_job(job, release_date, **kwargs) for job in jobs]
 
 
 def parse_report_recipients(raw: str) -> list[str]:
     """Parse a comma- or semicolon-separated recipient list from .env."""
     normalized = raw.replace(";", ",")
-    return [address.strip() for _name, address in getaddresses([normalized]) if address.strip()]
+    return [
+        address.strip()
+        for _name, address in getaddresses([normalized])
+        if address.strip()
+    ]
 
 
 def send_weekly_report(
@@ -219,11 +368,19 @@ def send_weekly_report(
     dry_run: bool,
 ) -> EmailResult:
     """Send one operational report per release Wednesday, tracking delivery in the normal log."""
-    recipients = list(dict.fromkeys(address.strip() for address in recipient_list if address.strip()))
+    recipients = list(
+        dict.fromkeys(address.strip() for address in recipient_list if address.strip())
+    )
     if not recipients:
-        return EmailResult("Еженедельный отчёт", "CONFIG_ERROR", "AARI_REPORT_RECIPIENTS не задан или не содержит адресов")
+        return EmailResult(
+            "Еженедельный отчёт",
+            "CONFIG_ERROR",
+            "AARI_REPORT_RECIPIENTS не задан или не содержит адресов",
+        )
     if not sender_email:
-        return EmailResult("Еженедельный отчёт", "CONFIG_ERROR", "не задан AARI_EMAIL_ADDRESS в .env")
+        return EmailResult(
+            "Еженедельный отчёт", "CONFIG_ERROR", "не задан AARI_EMAIL_ADDRESS в .env"
+        )
 
     fingerprint = hashlib.sha256(
         (subject + "\0" + body + "\0" + ",".join(recipients)).encode("utf-8")
@@ -237,19 +394,37 @@ def send_weekly_report(
     for line in log_lines:
         sent = re.search(r"REPORT_SENT\|(\d{4}-\d{2}-\d{2})\|([0-9a-f]{64})", line)
         if sent and sent.group(1) == date_text:
-            return EmailResult("Еженедельный отчёт", "ALREADY_SENT", "отчёт за эту дату уже передан SMTP")
-        uncertain = re.search(r"REPORT_UNCERTAIN\|(\d{4}-\d{2}-\d{2})\|([0-9a-f]{64})", line)
+            return EmailResult(
+                "Еженедельный отчёт",
+                "ALREADY_SENT",
+                "отчёт за эту дату уже передан SMTP",
+            )
+        uncertain = re.search(
+            r"REPORT_UNCERTAIN\|(\d{4}-\d{2}-\d{2})\|([0-9a-f]{64})", line
+        )
         if uncertain and uncertain.group(1) == date_text:
-            return EmailResult("Еженедельный отчёт", "REVIEW_REQUIRED", "предыдущая передача отчёта не подтверждена; проверьте почту перед повтором")
+            return EmailResult(
+                "Еженедельный отчёт",
+                "REVIEW_REQUIRED",
+                "предыдущая передача отчёта не подтверждена; проверьте почту перед повтором",
+            )
 
     if dry_run:
-        return EmailResult("Еженедельный отчёт", "DRY-RUN", f"тема: {subject}; получатели: {', '.join(recipients)}")
+        return EmailResult(
+            "Еженедельный отчёт",
+            "DRY-RUN",
+            f"тема: {subject}; получатели: {', '.join(recipients)}",
+        )
 
     if not password:
-        return EmailResult("Еженедельный отчёт", "CONFIG_ERROR", "не задан AARI_EMAIL_PASSWORD в .env")
+        return EmailResult(
+            "Еженедельный отчёт", "CONFIG_ERROR", "не задан AARI_EMAIL_PASSWORD в .env"
+        )
 
     message = EmailMessage(policy=policy.SMTP)
-    message["From"] = formataddr((sender_name, sender_email)) if sender_name else sender_email
+    message["From"] = (
+        formataddr((sender_name, sender_email)) if sender_name else sender_email
+    )
     message["To"] = ", ".join(recipients)
     message["Subject"] = subject
     message.set_content(body, charset="utf-8")
@@ -261,19 +436,37 @@ def send_weekly_report(
         server.login(sender_email, password)
     except (OSError, smtplib.SMTPException) as exc:
         LOG.error("REPORT_FAILED_BEFORE_SEND|%s|%s", date_text, fingerprint)
-        return EmailResult("Еженедельный отчёт", "MAIL_ERROR", f"не удалось подключиться к SMTP/авторизоваться: {exc}")
+        return EmailResult(
+            "Еженедельный отчёт",
+            "MAIL_ERROR",
+            f"не удалось подключиться к SMTP/авторизоваться: {exc}",
+        )
 
     try:
         LOG.info("REPORT_ATTEMPT|%s|%s", date_text, fingerprint)
-        refused = server.send_message(message, from_addr=sender_email, to_addrs=recipients)
+        refused = server.send_message(
+            message, from_addr=sender_email, to_addrs=recipients
+        )
         if refused:
             LOG.error("REPORT_UNCERTAIN|%s|%s", date_text, fingerprint)
-            return EmailResult("Еженедельный отчёт", "REVIEW_REQUIRED", f"SMTP отклонил часть получателей: {refused}; проверьте доставку вручную")
+            return EmailResult(
+                "Еженедельный отчёт",
+                "REVIEW_REQUIRED",
+                f"SMTP отклонил часть получателей: {refused}; проверьте доставку вручную",
+            )
         LOG.info("REPORT_SENT|%s|%s", date_text, fingerprint)
-        return EmailResult("Еженедельный отчёт", "SENT", f"передан SMTP; получатели: {', '.join(recipients)}")
+        return EmailResult(
+            "Еженедельный отчёт",
+            "SENT",
+            f"передан SMTP; получатели: {', '.join(recipients)}",
+        )
     except (OSError, smtplib.SMTPException) as exc:
         LOG.error("REPORT_UNCERTAIN|%s|%s", date_text, fingerprint)
-        return EmailResult("Еженедельный отчёт", "REVIEW_REQUIRED", f"SMTP не подтвердил результат отправки, проверьте почту: {exc}")
+        return EmailResult(
+            "Еженедельный отчёт",
+            "REVIEW_REQUIRED",
+            f"SMTP не подтвердил результат отправки, проверьте почту: {exc}",
+        )
     finally:
         try:
             server.quit()
