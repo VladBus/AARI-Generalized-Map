@@ -16,11 +16,34 @@ from email_sender import (
     process_email_job,
     process_test_email_suite,
     TEST_RECIPIENTS,
+    _create_smtp_context,
 )
 
 
 class EmailTests(unittest.TestCase):
     """Verify email recipients, bodies, attachments, and duplicate protection."""
+
+    def test_custom_ca_file_is_passed_to_verifying_ssl_context(self):
+        """Trust a configured CA file without disabling TLS certificate checks."""
+        with tempfile.TemporaryDirectory() as tmp:
+            ca_file = Path(tmp) / "aari-ca.pem"
+            ca_file.write_text("test certificate placeholder", encoding="utf-8")
+            expected_context = object()
+            with patch(
+                "email_sender.ssl.create_default_context",
+                return_value=expected_context,
+            ) as create_context:
+                actual_context = _create_smtp_context(str(ca_file))
+
+        self.assertIs(actual_context, expected_context)
+        create_context.assert_called_once_with(cafile=str(ca_file))
+
+    def test_missing_ca_file_fails_before_smtp_connection(self):
+        """Reject a configured CA path that does not exist."""
+        with tempfile.TemporaryDirectory() as tmp:
+            missing_ca = Path(tmp) / "missing-ca.pem"
+            with self.assertRaises(FileNotFoundError):
+                _create_smtp_context(str(missing_ca))
 
     def test_five_mailouts_and_attachment_counts(self):
         """Build exactly five emails with the required attachment counts."""
