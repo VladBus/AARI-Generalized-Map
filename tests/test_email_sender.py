@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+from email.message import EmailMessage
+from typing import cast
 from datetime import date
 from pathlib import Path
 from email_sender import (
@@ -54,7 +56,8 @@ class EmailTests(unittest.TestCase):
             body_part = msg.get_body(preferencelist=("html",))
             self.assertIsNotNone(body_part)
             assert body_part is not None
-            self.assertIn("Keep signature", body_part.get_content())
+            typed_body_part = cast(EmailMessage, body_part)
+            self.assertIn("Keep signature", typed_body_part.get_content())
 
     def test_dry_run_does_not_send(self):
         with tempfile.TemporaryDirectory() as tmp:
