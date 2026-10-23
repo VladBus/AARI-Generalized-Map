@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from email.message import EmailMessage
+from unittest.mock import patch
 from typing import cast
 from datetime import date
 from pathlib import Path
@@ -123,7 +124,10 @@ class EmailTests(unittest.TestCase):
         self.assertIsNone(message.get("Bcc"))
         self.assertIsNone(message.get("Reply-To"))
         self.assertEqual(message["Subject"], "[TEST] Product mail subject")
-        body = message.get_content()
+        body_part = message.get_body(preferencelist=("plain",))
+        self.assertIsNotNone(body_part)
+        assert body_part is not None
+        body = body_part.get_content()
         self.assertIn("[TEST MESSAGE", body)
         self.assertIn("Keep the original message body.", body)
         self.assertNotIn("production@example.org", str(message))
@@ -157,30 +161,29 @@ class EmailTests(unittest.TestCase):
                         (Attachment(attachment, "none"),),
                     )
                 )
-            log_path = root / "test.log"
-            with patch("email_sender.smtplib.SMTP_SSL") as smtp_factory:
-                results = process_test_email_suite(
-                    jobs,
-                    date(2026, 10, 21),
-                    "Weekly report subject",
-                    "Weekly report body",
-                    log_path=log_path,
-                    dry_run=True,
-                    smtp_server="smtp.example.org",
-                    smtp_port=465,
-                    sender_email="sender@example.org",
-                    sender_name="Test sender",
-                    password="",
-                    production_report_recipients=["production-report@example.org"],
-                    size_baselines={},
-                    min_size_ratio=0.35,
-                    max_size_ratio=2.5,
-                )
-                smtp_factory.assert_not_called()
+            with self.assertLogs("aari_generalized_map.email", level="INFO") as captured:
+                with patch("email_sender.smtplib.SMTP_SSL") as smtp_factory:
+                    results = process_test_email_suite(
+                        jobs,
+                        date(2026, 10, 21),
+                        "Weekly report subject",
+                        "Weekly report body",
+                        dry_run=True,
+                        smtp_server="smtp.example.org",
+                        smtp_port=465,
+                        sender_email="sender@example.org",
+                        sender_name="Test sender",
+                        password="",
+                        production_report_recipients=["production-report@example.org"],
+                        size_baselines={},
+                        min_size_ratio=0.35,
+                        max_size_ratio=2.5,
+                    )
+                    smtp_factory.assert_not_called()
 
         self.assertEqual(len(results), 6)
         self.assertTrue(all(result.status == "DRY-RUN" for result in results))
-        log = log_path.read_text(encoding="utf-8")
+        log = "\n".join(captured.output)
         self.assertIn("TEST_MAIL_REDIRECT", log)
         self.assertIn("TEST_MAIL_PLAN", log)
         self.assertIn("TEST_REPORT_PLAN", log)
