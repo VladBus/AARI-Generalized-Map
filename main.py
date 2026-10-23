@@ -495,9 +495,7 @@ def write_status(
 ) -> None:
     """Maintain a file-by-file status summary for every stage of the current release."""
     release_folder_date = run_date
-    if stage == "thursday" or (
-        stage == "validate" and run_date.weekday() != 2
-    ):
+    if stage == "thursday" or (stage == "validate" and run_date.weekday() != 2):
         release_folder_date = run_date - timedelta(days=1)
 
     previous_sections: dict[str, list[str]] = {}
@@ -515,7 +513,10 @@ def write_status(
         "",
     )
     section_marker = "РЕЗУЛЬТАТЫ ПО ЭТАПАМ ТЕКУЩЕГО ВЫПУСКА:"
-    if previous_release == release_folder_date.isoformat() and section_marker in previous_lines:
+    if (
+        previous_release == release_folder_date.isoformat()
+        and section_marker in previous_lines
+    ):
         in_sections = False
         current_stage: str | None = None
         current_lines: list[str] = []
@@ -528,7 +529,7 @@ def write_status(
             if line.startswith("ЭТАП: "):
                 if current_stage is not None:
                     previous_sections[current_stage] = current_lines
-                current_stage = line[len("ЭТАП: "):].split("|", 1)[0].strip()
+                current_stage = line[len("ЭТАП: ") :].split("|", 1)[0].strip()
                 current_lines = [line]
             elif current_stage is not None:
                 current_lines.append(line)

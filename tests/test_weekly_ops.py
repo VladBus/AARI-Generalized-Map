@@ -63,13 +63,21 @@ class WeeklyOperationsTests(unittest.TestCase):
                     date(2026, 10, 21),
                     "wednesday",
                     True,
-                    [main.Result("Overview JPG", "DRY-RUN", "source.jpg -> target/source.jpg")],
+                    [
+                        main.Result(
+                            "Overview JPG", "DRY-RUN", "source.jpg -> target/source.jpg"
+                        )
+                    ],
                 )
                 main.write_status(
                     date(2026, 10, 22),
                     "thursday",
                     True,
-                    [main.Result("LVP_WAVE", "DRY-RUN", "source.shp -> target/source.shp")],
+                    [
+                        main.Result(
+                            "LVP_WAVE", "DRY-RUN", "source.shp -> target/source.shp"
+                        )
+                    ],
                 )
                 same_release = status_path.read_text(encoding="utf-8")
                 self.assertIn("ЭТАП: wednesday", same_release)
