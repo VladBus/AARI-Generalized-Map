@@ -17,6 +17,7 @@ from email_sender import (
     build_email_jobs,
     parse_report_recipients,
     process_email_jobs,
+    process_test_email_suite,
     send_weekly_report,
 )
 
@@ -602,13 +603,18 @@ def main() -> int:
     parser.add_argument("--date", help="Дата запуска для тестирования, YYYY-MM-DD.")
     parser.add_argument(
         "--stage",
-        choices=("auto", "validate", "oldshore", "wednesday", "thursday", "report"),
+        choices=("auto", "validate", "oldshore", "wednesday", "thursday", "report", "mail-test"),
         default="auto",
     )
     parser.add_argument(
         "--execute",
         action="store_true",
         help="Выполнить копирование и отправку. Без флага работает dry-run.",
+    )
+    parser.add_argument(
+        "--send-test-email",
+        action="store_true",
+        help="Только для --stage mail-test: реально отправить шесть тестовых писем на фиксированные тестовые адреса.",
     )
     parser.add_argument(
         "--resend-changed-email",
@@ -621,11 +627,84 @@ def main() -> int:
         run_date = date.fromisoformat(args.date) if args.date else date.today()
     except ValueError:
         parser.error("--date должен иметь формат YYYY-MM-DD")
+
+    if args.send_test_email and args.stage != "mail-test":
+        parser.error("--send-test-email разрешён только вместе с --stage mail-test")
+    if args.stage == "mail-test":
+        if not args.date:
+            parser.error("--stage mail-test требует явный --date папки выпуска (например, 2026-10-21)")
+        if args.execute:
+            parser.error("Для mail-test не используйте --execute; отдельный флаг --send-test-email включает только тестовую почту")
+        if run_date.weekday() != 2:
+            parser.error("--date для mail-test должен соответствовать среде — дате папки выпуска")
+    elif args.send_test_email:
+        parser.error("--send-test-email разрешён только вместе с --stage mail-test")
+
     now = datetime.now()
     stage = resolve_stage(args.stage, run_date, now) or "inactive"
     dry_run = not args.execute
     LOG.info("START | date=%s | stage=%s | dry_run=%s", run_date, stage, dry_run)
     results: list[Result] = []
+
+    if stage == "mail-test":
+        chart = product_date(run_date)
+        date_phrase = russian_date_range(chart)
+        release_root = SOURCE_ROOT / run_date.isoformat()
+        email_jobs = build_email_jobs(
+            release_root,
+            chart,
+            PROJECT_DIR / "email_templates",
+            date_phrase,
+        )
+        status_snapshot = read_status_snapshot()
+        next_release_root = SOURCE_ROOT / (run_date + timedelta(days=7)).isoformat()
+        report_subject = f"Обобщёнка: отчёт за {date_phrase}"
+        report_body = (
+            "Тест еженедельного отчёта по автоматизации «Обобщёнка».\n"
+            "Это диагностическое письмо; рабочий список получателей не используется.\n"
+            f"Дата тестирования: {datetime.now():%Y-%m-%d %H:%M:%S}\n"
+            f"Папка проверяемого выпуска: {release_root}\n"
+            f"Период карты: {date_phrase}\n\n"
+            "Следующая папка выпуска (только расчёт; в режиме mail-test она не создаётся): "
+            f"{next_release_root}\n\n"
+            "Состояние STATUS.txt на момент проверки:\n"
+            f"{status_snapshot}\n\n"
+            f"Подробный журнал: {LOG_FILE}\n"
+        )
+        report_recipients = parse_report_recipients(
+            os.getenv("AARI_REPORT_RECIPIENTS", "")
+        )
+        results = process_test_email_suite(
+            email_jobs,
+            run_date,
+            report_subject,
+            report_body,
+            log_path=LOG_FILE,
+            dry_run=not args.send_test_email,
+            smtp_server=os.getenv("AARI_SMTP_SERVER", "zmail.aari.ru"),
+            smtp_port=int(os.getenv("AARI_SMTP_PORT", "465")),
+            sender_email=os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
+            sender_name=os.getenv("AARI_EMAIL_NAME", "").strip(),
+            password=os.getenv("AARI_EMAIL_PASSWORD", ""),
+            production_report_recipients=report_recipients,
+            size_baselines=SIZE_BASELINES,
+            min_size_ratio=MIN_SIZE_RATIO,
+            max_size_ratio=MAX_SIZE_RATIO,
+        )
+        for result in results:
+            LOG.info("TEST_MAIL_RESULT | [%s] %s: %s", result.status, result.name, result.detail)
+        errors = [
+            result for result in results
+            if result.status in {"BLOCKED", "ERROR", "CONFIG_ERROR", "MAIL_ERROR", "REVIEW_REQUIRED"}
+        ]
+        LOG.info(
+            "TEST_MAIL_SUITE_END | date=%s | mode=%s | results=%d | errors=%d | product_files_changed=no | STATUS_changed=no",
+            run_date.isoformat(),
+            "SEND_TO_TEST_ALLOWLIST" if args.send_test_email else "DRY-RUN",
+            len(results),
+            len(errors),
+        )
+        return 1 if errors else 0
 
     if stage == "report":
         folder_result = create_next_week_template_folder(run_date, dry_run)
