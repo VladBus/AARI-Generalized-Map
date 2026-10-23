@@ -24,7 +24,7 @@ TEST_RECIPIENTS = ("vvbusev@aari.ru", "sanovikov@aari.ru")
 
 
 def _create_smtp_context(ca_file: str | None) -> ssl.SSLContext:
-    """Create a verifying TLS context, optionally trusting an explicit CA file."""
+    """Create a default verifying TLS context and optionally add a trusted CA file."""
     if not ca_file:
         return ssl.create_default_context()
 
@@ -33,7 +33,10 @@ def _create_smtp_context(ca_file: str | None) -> ssl.SSLContext:
         raise FileNotFoundError(
             f"AARI_SMTP_CA_FILE не найден или недоступен: {certificate_path}"
         )
-    return ssl.create_default_context(cafile=str(certificate_path))
+
+    context = ssl.create_default_context()
+    context.load_verify_locations(cafile=str(certificate_path))
+    return context
 
 
 def _smtp_error_detail(exc: BaseException, ca_file: str | None) -> str:
