@@ -13,6 +13,8 @@ from email_sender import (
     _fingerprint,
     build_email_jobs,
     process_email_job,
+    process_test_email_suite,
+    TEST_RECIPIENTS,
 )
 
 
@@ -73,6 +75,117 @@ class EmailTests(unittest.TestCase):
             assert body_part is not None
             typed_body_part = cast(EmailMessage, body_part)
             self.assertIn("Keep signature", typed_body_part.get_content())
+
+    def test_test_message_overrides_all_template_recipients(self):
+        """Test mode strips production To/Cc/Bcc/Reply-To and uses the allowlist."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            template = root / "template.eml"
+            attachment = root / "map.jpg"
+            template.write_text(
+                "\n".join(
+                    [
+                        "To: production@example.org",
+                        "Cc: copy@example.org",
+                        "Bcc: hidden@example.org",
+                        "Reply-To: reply@example.org",
+                        "Subject: old",
+                        "MIME-Version: 1.0",
+                        "Content-Type: text/plain; charset=UTF-8",
+                        "",
+                        "Keep the original message body.",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            attachment.write_bytes(b"image bytes")
+            job = EmailJob(
+                "test",
+                "Test",
+                template,
+                "Product mail subject",
+                (Attachment(attachment, "none"),),
+            )
+            message, recipients = _build_message(
+                job,
+                "sender@example.org",
+                "Sender",
+                recipient_override=TEST_RECIPIENTS,
+                subject_prefix="[TEST] ",
+                test_notice=True,
+            )
+        self.assertEqual(recipients, list(TEST_RECIPIENTS))
+        self.assertEqual(
+            message["To"], "vvbusev@aari.ru, sanovikov@aari.ru"
+        )
+        self.assertIsNone(message.get("Cc"))
+        self.assertIsNone(message.get("Bcc"))
+        self.assertIsNone(message.get("Reply-To"))
+        self.assertEqual(message["Subject"], "[TEST] Product mail subject")
+        body = message.get_content()
+        self.assertIn("[TEST MESSAGE", body)
+        self.assertIn("Keep the original message body.", body)
+        self.assertNotIn("production@example.org", str(message))
+        self.assertNotIn("hidden@example.org", str(message))
+
+    def test_test_suite_preview_builds_six_messages_without_smtp(self):
+        """Test-suite preview validates five product mails and the report without SMTP."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            template = root / "template.eml"
+            template.write_text(
+                "To: production@example.org\n"
+                "Cc: copied@example.org\n"
+                "Reply-To: reply@example.org\n"
+                "Subject: template\n"
+                "MIME-Version: 1.0\n"
+                "Content-Type: text/plain; charset=UTF-8\n\n"
+                "Test body.\n",
+                encoding="utf-8",
+            )
+            jobs = []
+            for index in range(5):
+                attachment = root / f"attachment_{index}.bin"
+                attachment.write_bytes(f"test attachment {index}".encode("utf-8"))
+                jobs.append(
+                    EmailJob(
+                        f"test_{index}",
+                        f"Test product email {index}",
+                        template,
+                        f"Product subject {index}",
+                        (Attachment(attachment, "none"),),
+                    )
+                )
+            log_path = root / "test.log"
+            with patch("email_sender.smtplib.SMTP_SSL") as smtp_factory:
+                results = process_test_email_suite(
+                    jobs,
+                    date(2026, 10, 21),
+                    "Weekly report subject",
+                    "Weekly report body",
+                    log_path=log_path,
+                    dry_run=True,
+                    smtp_server="smtp.example.org",
+                    smtp_port=465,
+                    sender_email="sender@example.org",
+                    sender_name="Test sender",
+                    password="",
+                    production_report_recipients=["production-report@example.org"],
+                    size_baselines={},
+                    min_size_ratio=0.35,
+                    max_size_ratio=2.5,
+                )
+                smtp_factory.assert_not_called()
+
+        self.assertEqual(len(results), 6)
+        self.assertTrue(all(result.status == "DRY-RUN" for result in results))
+        log = log_path.read_text(encoding="utf-8")
+        self.assertIn("TEST_MAIL_REDIRECT", log)
+        self.assertIn("TEST_MAIL_PLAN", log)
+        self.assertIn("TEST_REPORT_PLAN", log)
+        self.assertIn("production@example.org", log)
+        self.assertIn("vvbusev@aari.ru, sanovikov@aari.ru", log)
 
     def test_dry_run_does_not_send(self):
         """A dry-run produces a preview without SMTP credentials or connection."""
