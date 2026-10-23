@@ -23,6 +23,39 @@ COMPONENTS = (".shp", ".shx", ".dbf", ".prj")
 TEST_RECIPIENTS = ("vvbusev@aari.ru", "sanovikov@aari.ru")
 
 
+def _create_smtp_context(ca_file: str | None) -> ssl.SSLContext:
+    """Create a verifying TLS context, optionally trusting an explicit CA file."""
+    if not ca_file:
+        return ssl.create_default_context()
+
+    certificate_path = Path(ca_file).expanduser()
+    if not certificate_path.is_file():
+        raise FileNotFoundError(
+            f"AARI_SMTP_CA_FILE не найден или недоступен: {certificate_path}"
+        )
+    return ssl.create_default_context(cafile=str(certificate_path))
+
+
+def _smtp_error_detail(exc: BaseException, ca_file: str | None) -> str:
+    """Explain safe remediation for SMTP certificate and CA-file failures."""
+    detail = str(exc)
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        if ca_file:
+            hint = (
+                "Проверьте, что AARI_SMTP_CA_FILE указывает на правильный "
+                "доверенный CA-сертификат или цепочку сертификатов."
+            )
+        else:
+            hint = (
+                "Получите доверенный корневой/промежуточный CA-сертификат у ИТ и "
+                "задайте AARI_SMTP_CA_FILE в .env; проверку TLS отключать нельзя."
+            )
+        return f"{detail}; {hint}"
+    if isinstance(exc, FileNotFoundError) and ca_file:
+        return f"{detail}; проверьте путь AARI_SMTP_CA_FILE в .env."
+    return detail
+
+
 @dataclass(frozen=True)
 class Attachment:
     """An attachment path paired with its size-validation category."""
@@ -291,6 +324,7 @@ def process_email_job(
     size_baselines: dict[str, dict[str, int]],
     min_size_ratio: float,
     max_size_ratio: float,
+    smtp_ca_file: str | None = None,
     resend_changed: bool = False,
 ) -> EmailResult:
     """Validate and send one product email, avoiding silent duplicate sends."""
@@ -351,7 +385,7 @@ def process_email_job(
 
     try:
         server = smtplib.SMTP_SSL(
-            smtp_server, smtp_port, timeout=30, context=ssl.create_default_context()
+            smtp_server, smtp_port, timeout=30, context=_create_smtp_context(smtp_ca_file)
         )
         server.login(sender_email, password)
     except (OSError, smtplib.SMTPException) as exc:
@@ -364,7 +398,8 @@ def process_email_job(
         return EmailResult(
             job.name,
             "MAIL_ERROR",
-            f"не удалось подключиться к SMTP/авторизоваться: {exc}",
+            "не удалось подключиться к SMTP/авторизоваться: "
+            f"{_smtp_error_detail(exc, smtp_ca_file)}",
         )
     try:
         LOG.info(
@@ -423,6 +458,7 @@ def process_email_jobs(
     size_baselines: dict[str, dict[str, int]],
     min_size_ratio: float,
     max_size_ratio: float,
+    smtp_ca_file: str | None = None,
     resend_changed: bool = False,
 ) -> list[EmailResult]:
     """Process all five product emails with explicit, checked SMTP options."""
@@ -441,6 +477,7 @@ def process_email_jobs(
             size_baselines=size_baselines,
             min_size_ratio=min_size_ratio,
             max_size_ratio=max_size_ratio,
+            smtp_ca_file=smtp_ca_file,
             resend_changed=resend_changed,
         )
         results.append(result)
@@ -470,6 +507,7 @@ def send_weekly_report(
     password: str,
     recipient_list: Sequence[str],
     dry_run: bool,
+    smtp_ca_file: str | None = None,
 ) -> EmailResult:
     """Send one operational report per release Wednesday, tracking delivery in the normal log."""
     recipients = list(
@@ -535,7 +573,7 @@ def send_weekly_report(
 
     try:
         server = smtplib.SMTP_SSL(
-            smtp_server, smtp_port, timeout=30, context=ssl.create_default_context()
+            smtp_server, smtp_port, timeout=30, context=_create_smtp_context(smtp_ca_file)
         )
         server.login(sender_email, password)
     except (OSError, smtplib.SMTPException) as exc:
@@ -543,7 +581,8 @@ def send_weekly_report(
         return EmailResult(
             "Еженедельный отчёт",
             "MAIL_ERROR",
-            f"не удалось подключиться к SMTP/авторизоваться: {exc}",
+            "не удалось подключиться к SMTP/авторизоваться: "
+            f"{_smtp_error_detail(exc, smtp_ca_file)}",
         )
 
     try:
@@ -594,6 +633,7 @@ def process_test_email_suite(
     size_baselines: dict[str, dict[str, int]],
     min_size_ratio: float,
     max_size_ratio: float,
+    smtp_ca_file: str | None = None,
 ) -> list[EmailResult]:
     """Preview or send six test messages, hard-routed to TEST_RECIPIENTS only."""
     report_key = "weekly_report_test"
@@ -770,7 +810,7 @@ def process_test_email_suite(
 
     try:
         server = smtplib.SMTP_SSL(
-            smtp_server, smtp_port, timeout=30, context=ssl.create_default_context()
+            smtp_server, smtp_port, timeout=30, context=_create_smtp_context(smtp_ca_file)
         )
         server.login(sender_email, password)
         LOG.info(
@@ -785,13 +825,14 @@ def process_test_email_suite(
             release_date.isoformat(),
             smtp_server,
             smtp_port,
-            exc,
+            _smtp_error_detail(exc, smtp_ca_file),
         )
         return [
             EmailResult(
                 name,
                 "MAIL_ERROR",
-                f"не удалось подключиться к SMTP/авторизоваться; ничего не отправлено: {exc}",
+                "не удалось подключиться к SMTP/авторизоваться; ничего не отправлено: "
+                f"{_smtp_error_detail(exc, smtp_ca_file)}",
             )
             for _key, name in ordered
         ]
