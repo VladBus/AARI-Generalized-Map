@@ -824,7 +824,7 @@ def process_test_email_suite(
         )
     except (OSError, smtplib.SMTPException) as exc:
         LOG.error(
-            "TEST_SMTP_AUTH_FAILED | date=%s | server=%s | port=%s | %s",
+            "TEST_SMTP_CONNECTION_OR_AUTH_FAILED | date=%s | server=%s | port=%s | %s",
             release_date.isoformat(),
             smtp_server,
             smtp_port,
