@@ -369,17 +369,30 @@ def copy_job(job: CopyJob, dry_run: bool) -> Result:
     """Copy one checked file group, replacing older target files if needed."""
     errors = inspect_job(job)
     if errors:
+        for error in errors:
+            LOG.error("COPY_BLOCKED | %s | %s", job.name, error)
         return Result(job.name, "BLOCKED", "; ".join(errors))
-    file_details: list[str] = []
+
     if dry_run:
-        file_details = [
-            f"{source} → {job.target_dir / source.name}" for source in job.sources
-        ]
-        detail = (
-            f"{len(job.sources)} файл(ов); предварительные пути по каждому файлу:\n"
-            + "\n".join(file_details)
+        LOG.info(
+            "DRY_RUN_COPY | %s | %d file(s) -> %s",
+            job.name,
+            len(job.sources),
+            job.target_dir,
         )
-        return Result(job.name, "DRY-RUN", detail)
+        for source in job.sources:
+            LOG.info(
+                "DRY_RUN_FILE | %s | %s -> %s",
+                job.name,
+                source,
+                job.target_dir / source.name,
+            )
+        return Result(
+            job.name,
+            "DRY-RUN",
+            f"{len(job.sources)} файл(ов) → {job.target_dir}",
+        )
+
     copied, replaced, unchanged = 0, 0, 0
     try:
         job.target_dir.mkdir(parents=True, exist_ok=True)
@@ -387,23 +400,19 @@ def copy_job(job: CopyJob, dry_run: bool) -> Result:
             target = job.target_dir / source.name
             if target.is_file() and filecmp.cmp(source, target, shallow=False):
                 unchanged += 1
-                file_details.append(f"БЕЗ ИЗМЕНЕНИЙ: {source} → {target}")
+                LOG.info("UNCHANGED | %s | %s → %s", source.name, source, target)
                 continue
             was_present = target.exists()
             shutil.copy2(source, target)
             if was_present:
                 replaced += 1
-                state = "ЗАМЕНЕНО"
                 LOG.info("REPLACED | %s | %s → %s", source.name, source, target)
             else:
                 copied += 1
-                state = "СКОПИРОВАНО"
                 LOG.info("COPIED | %s | %s → %s", source.name, source, target)
-            file_details.append(f"{state}: {source} → {target}")
         detail = (
             f"скопировано: {copied}; заменено: {replaced}; "
-            f"без изменений: {unchanged}; каталог: {job.target_dir}\n"
-            + "\n".join(file_details)
+            f"без изменений: {unchanged}; каталог: {job.target_dir}"
         )
         return Result(job.name, "OK", detail)
     except OSError as exc:
@@ -493,7 +502,7 @@ def read_status_snapshot() -> str:
 def write_status(
     run_date: date, stage: str, dry_run: bool, results: Sequence[Result]
 ) -> None:
-    """Maintain a file-by-file status summary for every stage of the current release."""
+    """Write a concise current-release summary; detailed events belong in the log."""
     release_folder_date = run_date
     if stage == "thursday" or (stage == "validate" and run_date.weekday() != 2):
         release_folder_date = run_date - timedelta(days=1)
@@ -512,7 +521,7 @@ def write_status(
         ),
         "",
     )
-    section_marker = "РЕЗУЛЬТАТЫ ПО ЭТАПАМ ТЕКУЩЕГО ВЫПУСКА:"
+    section_marker = "КРАТКИЕ РЕЗУЛЬТАТЫ ПО ЭТАПАМ ВЫПУСКА:"
     if (
         previous_release == release_folder_date.isoformat()
         and section_marker in previous_lines
@@ -536,154 +545,33 @@ def write_status(
         if current_stage is not None:
             previous_sections[current_stage] = current_lines
 
-    mode = "ПРОВЕРКА БЕЗ ЗАПИСИ" if dry_run else "РАБОЧИЙ РЕЖИМ"
+    mode = "DRY-RUN — без копирования/отправки" if dry_run else "РАБОЧИЙ РЕЖИМ"
     stage_lines = [
-        f"ЭТАП: {stage} | режим: {mode} | запуск: {datetime.now():%Y-%m-%d %H:%M:%S}"
+        f"ЭТАП: {stage} | {mode} | {datetime.now():%Y-%m-%d %H:%M:%S}"
     ]
-    if results:
-        for result in results:
-            stage_lines.append(f"  [{result.status}] {result.name}")
-            detail_lines = result.detail.splitlines()
-            if detail_lines:
-                stage_lines.extend(f"      {line}" for line in detail_lines)
-            else:
-                stage_lines.append("      Подробности не указаны.")
-    else:
-        stage_lines.append("  Нет действий: запуск не попал в плановое окно.")
-    previous_sections[stage] = stage_lines
-
-    lines = [
-        "ААНИИ / ЦЛГМИ — ОБОБЩЕНКА: ТЕКУЩИЙ СТАТУС",
-        f"Время обновления: {datetime.now():%Y-%m-%d %H:%M:%S}",
-        f"Дата выпуска (каталог среды): {release_folder_date.isoformat()}",
-        f"Дата последнего запуска: {run_date.isoformat()}",
-        f"Последний этап: {stage}",
-        f"Режим последнего запуска: {mode}",
-        "",
-        "КУДА ВЫКЛАДЫВАЮТСЯ ФАЙЛЫ:",
-        f"МОРЕ: {MORE_ROOT}",
-        f"IceCharts: {ICECHARTS_V_ROOT}",
-        f"Ice_charts Восток/Запад/Обобщенная/Арктика: {ICE_CHARTS_ROOT}",
-        f"morspass: {MORSPASS_ROOT}",
-        f"sovbez: {SOVBEZ_ROOT}",
-        f"LVP_WAVE: {LVP_WAVE_ROOT}",
-        f"Сайт: {WEBSITE_ROOT}",
-        f"Журнал: {LOG_FILE}",
-        "",
-        section_marker,
-    ]
-    for section in previous_sections.values():
-        lines.extend(section)
-        lines.append("")
-    try:
-        STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        STATUS_FILE.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-    except OSError as exc:
-        LOG.error("Не удалось обновить STATUS.txt (%s): %s", STATUS_FILE, exc)
-
-
-def main() -> int:
-    """Parse CLI options and run a validation, copy, or report stage."""
-    parser = argparse.ArgumentParser(
-        description="Автоматизация рассылки и публикации результатов Обобщёнки."
-    )
-    parser.add_argument("--date", help="Дата запуска для тестирования, YYYY-MM-DD.")
-    parser.add_argument(
-        "--stage",
-        choices=("auto", "validate", "oldshore", "wednesday", "thursday", "report"),
-        default="auto",
-    )
-    parser.add_argument(
-        "--execute",
-        action="store_true",
-        help="Выполнить копирование и отправку. Без флага работает dry-run.",
-    )
-    parser.add_argument(
-        "--resend-changed-email",
-        action="store_true",
-        help="Разрешить повторную отправку изменившихся вложений после проверки экспертом.",
-    )
-    args = parser.parse_args()
-    setup_logging()
-    try:
-        run_date = date.fromisoformat(args.date) if args.date else date.today()
-    except ValueError:
-        parser.error("--date должен иметь формат YYYY-MM-DD")
-    now = datetime.now()
-    stage = resolve_stage(args.stage, run_date, now) or "inactive"
-    dry_run = not args.execute
-    LOG.info("START | date=%s | stage=%s | dry_run=%s", run_date, stage, dry_run)
-    results: list[Result] = []
-
-    if stage == "report":
-        folder_result = create_next_week_template_folder(run_date, dry_run)
-        LOG.info(
-            "[%s] %s: %s",
-            folder_result.status,
-            folder_result.name,
-            folder_result.detail,
-        )
-        status_snapshot = read_status_snapshot()
-        chart = product_date(run_date)
-        subject = f"Обобщёнка: отчёт за {russian_date_range(chart)}"
-        report_body = (
-            "Еженедельный отчёт по автоматизации «Обобщёнка»\n"
-            f"Дата формирования: {datetime.now():%Y-%m-%d %H:%M:%S}\n"
-            f"Период карты: {russian_date_range(chart)}\n\n"
-            "Подготовка каталога следующего выпуска: "
-            f"[{folder_result.status}] {folder_result.detail}\n\n"
-            "Состояние основных операций (последний STATUS.txt):\n"
-            f"{status_snapshot}\n\n"
-            f"Полный журнал: {LOG_FILE}\n"
-        )
-        report_result = send_weekly_report(
-            subject,
-            report_body,
-            run_date,
-            log_path=LOG_FILE,
-            smtp_server=os.getenv("AARI_SMTP_SERVER", "zmail.aari.ru"),
-            smtp_port=int(os.getenv("AARI_SMTP_PORT", "465")),
-            sender_email=os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
-            sender_name=os.getenv("AARI_EMAIL_NAME", "").strip(),
-            password=os.getenv("AARI_EMAIL_PASSWORD", ""),
-            recipient_list=parse_report_recipients(
-                os.getenv("AARI_REPORT_RECIPIENTS", "")
-            ),
-            dry_run=dry_run,
-        )
-        LOG.info(
-            "[%s] %s: %s",
-            report_result.status,
-            report_result.name,
-            report_result.detail,
-        )
-        report_failed = report_result.status in {
-            "ERROR",
-            "CONFIG_ERROR",
-            "MAIL_ERROR",
-            "REVIEW_REQUIRED",
-        }
-        results.extend(
-            [
-                folder_result,
-                Result(report_result.name, report_result.status, report_result.detail),
-            ]
-        )
-        write_status(run_date, stage, dry_run, results)
-        report_has_errors = report_failed or folder_result.status == "ERROR"
-        LOG.info(
-            "END | results=%s | errors=%d",
-            len(results),
-            int(report_has_errors),
-        )
-        return 1 if report_has_errors else 0
-
     if stage == "validate":
         release_day = (
             run_date if run_date.weekday() == 2 else run_date - timedelta(days=1)
         )
         for job in build_stage_jobs(release_day, "wednesday"):
             errors = inspect_job(job)
+            if errors:
+                for error in errors:
+                    LOG.error("VALIDATION_ERROR | %s | %s", job.name, error)
+            else:
+                LOG.info(
+                    "VALIDATION_OK | %s | files=%d | target=%s",
+                    job.name,
+                    len(job.sources),
+                    job.target_dir,
+                )
+            for source in job.sources:
+                LOG.info(
+                    "VALIDATION_FILE | %s | %s -> %s",
+                    job.name,
+                    source,
+                    job.target_dir / source.name,
+                )
             results.append(
                 Result(
                     job.name,
@@ -691,11 +579,8 @@ def main() -> int:
                     (
                         "; ".join(errors)
                         if errors
-                        else "Проверены источники и целевые пути:\\n"
-                        + "\\n".join(
-                            f"{source} → {job.target_dir / source.name}"
-                            for source in job.sources
-                        )
+                        else f"проверено файлов: {len(job.sources)}; "
+                        f"назначение: {job.target_dir}"
                     ),
                 )
             )
