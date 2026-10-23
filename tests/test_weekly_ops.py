@@ -96,6 +96,7 @@ class WeeklyOperationsTests(unittest.TestCase):
                 self.assertIn("4 SHP files -> LVP_WAVE", same_release)
                 self.assertNotIn("very-long", same_release)
                 self.assertNotIn("map.jpg", same_release)
+                self.assertNotIn("\\n\\n\\n", same_release)
 
                 main.write_status(
                     date(2026, 10, 28),
