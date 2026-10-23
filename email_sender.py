@@ -23,12 +23,16 @@ COMPONENTS = (".shp", ".shx", ".dbf", ".prj")
 
 @dataclass(frozen=True)
 class Attachment:
+    """An attachment path paired with its size-validation category."""
+
     path: Path
     family: str
 
 
 @dataclass(frozen=True)
 class EmailJob:
+    """Description of one product email and the files it contains."""
+
     key: str
     name: str
     template: Path
@@ -38,12 +42,15 @@ class EmailJob:
 
 @dataclass(frozen=True)
 class EmailResult:
+    """Outcome and human-readable details for one email operation."""
+
     name: str
     status: str
     detail: str
 
 
 def _components(folder: Path, stem: str, family: str) -> tuple[Attachment, ...]:
+    """Return the four sidecar files for a shapefile stem."""
     return tuple(
         Attachment(folder / f"{stem}{suffix}", family) for suffix in COMPONENTS
     )
@@ -52,6 +59,7 @@ def _components(folder: Path, stem: str, family: str) -> tuple[Attachment, ...]:
 def build_email_jobs(
     source_folder: Path, chart_date: date, template_dir: Path, date_phrase: str
 ) -> list[EmailJob]:
+    """Build the five product emails and their attachments for this chart date."""
     stamp = chart_date.strftime("%Y%m%d")
     pic, sigrid = source_folder / "PIC", source_folder / "sigrid"
     fsb_template = template_dir / "Шаблон ФСБ.eml"
@@ -123,6 +131,7 @@ def _body(template: EmailMessage) -> tuple[str, str]:
 def _build_message(
     job: EmailJob, sender: str, sender_name: str
 ) -> tuple[EmailMessage, list[str]]:
+    """Apply template headers/body and attach the files specified by the job."""
     template = _parse_template(job.template)
     recipients = [
         address
@@ -163,6 +172,7 @@ def _build_message(
 
 
 def _fingerprint(job: EmailJob) -> str:
+    """Hash attachment names and contents to recognize repeat sends."""
     digest = hashlib.sha256()
     for attachment in job.attachments:
         digest.update(attachment.path.name.encode("utf-8") + b"\0")
@@ -205,6 +215,7 @@ def _validate(
     min_ratio: float,
     max_ratio: float,
 ) -> list[str]:
+    """Return issues with template, attachment set, or reference file sizes."""
     errors: list[str] = []
     suffixes = {a.path.suffix.lower() for a in job.attachments}
     if suffixes.intersection(COMPONENTS) and not set(COMPONENTS).issubset(suffixes):
@@ -243,6 +254,7 @@ def process_email_job(
     max_size_ratio: float,
     resend_changed: bool = False,
 ) -> EmailResult:
+    """Validate and send one product email, avoiding silent duplicate sends."""
     errors = _validate(job, size_baselines, min_size_ratio, max_size_ratio)
     if errors:
         return EmailResult(job.name, "BLOCKED", "; ".join(errors))
@@ -279,7 +291,8 @@ def process_email_job(
         return EmailResult(
             job.name,
             "DRY-RUN",
-            f"тема: {job.subject}; адресаты: {', '.join(recipients)}; вложений: {len(job.attachments)}",
+            f"тема: {job.subject}; адресаты: {', '.join(recipients)}; "
+            f"вложений: {len(job.attachments)}",
         )
     if not password:
         return EmailResult(
