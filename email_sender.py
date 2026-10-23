@@ -110,13 +110,13 @@ def _parse_template(path: Path) -> EmailMessage:
 
 
 def _body(template: EmailMessage) -> tuple[str, str]:
+    """Extract the preferred HTML/plain body without depending on broad Message stubs."""
     if template.is_multipart():
         part = template.get_body(preferencelist=("html", "plain"))
-        return (
-            (str(part.get_content()), part.get_content_subtype())
-            if part
-            else ("", "plain")
-        )
+        if part is None:
+            return "", "plain"
+        body_part = cast(EmailMessage, part)
+        return str(body_part.get_content()), body_part.get_content_subtype()
     return str(template.get_content()), template.get_content_subtype()
 
 
