@@ -331,13 +331,13 @@ def main() -> int:
         chart = product_date(run_date)
         subject = f"Обобщёнка: отчёт за {russian_date_range(chart)}"
         report_body = (
-            "Еженедельный отчёт по автоматизации «Обобщёнка»\\n"
-            f"Дата формирования: {datetime.now():%Y-%m-%d %H:%M:%S}\\n"
-            f"Период карты: {russian_date_range(chart)}\\n\\n"
-            f"Подготовка каталога следующего выпуска: [{folder_result.status}] {folder_result.detail}\\n\\n"
-            "Состояние основных операций (последний STATUS.txt):\\n"
-            f"{status_snapshot}\\n\\n"
-            f"Полный журнал: {LOG_FILE}\\n"
+            "Еженедельный отчёт по автоматизации «Обобщёнка»\n"
+            f"Дата формирования: {datetime.now():%Y-%m-%d %H:%M:%S}\n"
+            f"Период карты: {russian_date_range(chart)}\n\n"
+            f"Подготовка каталога следующего выпуска: [{folder_result.status}] {folder_result.detail}\n\n"
+            "Состояние основных операций (последний STATUS.txt):\n"
+            f"{status_snapshot}\n\n"
+            f"Полный журнал: {LOG_FILE}\n"
         )
         from email_sender import parse_report_recipients, send_weekly_report
         report_result = send_weekly_report(
