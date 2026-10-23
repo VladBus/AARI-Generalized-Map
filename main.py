@@ -104,9 +104,11 @@ class Result:
 
 
 def setup_logging() -> None:
-    """Write the run log to the shared source folder; fall back to the console."""
+    """Configure logging and separate each process run in the persistent file log."""
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+    has_previous_entries = False
     try:
+        has_previous_entries = LOG_FILE.is_file() and LOG_FILE.stat().st_size > 0
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         handlers.insert(0, logging.FileHandler(LOG_FILE, encoding="utf-8"))
     except OSError as exc:
@@ -118,6 +120,16 @@ def setup_logging() -> None:
         handlers=handlers,
         force=True,
     )
+    if has_previous_entries:
+        for handler in handlers:
+            if isinstance(handler, logging.FileHandler) and handler.stream is not None:
+                handler.acquire()
+                try:
+                    handler.stream.write("\n")
+                    handler.flush()
+                finally:
+                    handler.release()
+                break
 
 
 def product_date(release_folder_date: date) -> date:
@@ -700,6 +712,7 @@ def main() -> int:
             dry_run=not args.send_test_email,
             smtp_server=os.getenv("AARI_SMTP_SERVER", "zmail.aari.ru"),
             smtp_port=int(os.getenv("AARI_SMTP_PORT", "465")),
+            smtp_ca_file=os.getenv("AARI_SMTP_CA_FILE", "").strip() or None,
             sender_email=os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
             sender_name=os.getenv("AARI_EMAIL_NAME", "").strip(),
             password=os.getenv("AARI_EMAIL_PASSWORD", ""),
@@ -761,6 +774,7 @@ def main() -> int:
             log_path=LOG_FILE,
             smtp_server=os.getenv("AARI_SMTP_SERVER", "zmail.aari.ru"),
             smtp_port=int(os.getenv("AARI_SMTP_PORT", "465")),
+            smtp_ca_file=os.getenv("AARI_SMTP_CA_FILE", "").strip() or None,
             sender_email=os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
             sender_name=os.getenv("AARI_EMAIL_NAME", "").strip(),
             password=os.getenv("AARI_EMAIL_PASSWORD", ""),
@@ -863,6 +877,7 @@ def main() -> int:
                 dry_run=dry_run,
                 smtp_server=os.getenv("AARI_SMTP_SERVER", "zmail.aari.ru"),
                 smtp_port=int(os.getenv("AARI_SMTP_PORT", "465")),
+                smtp_ca_file=os.getenv("AARI_SMTP_CA_FILE", "").strip() or None,
                 sender_email=os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
                 sender_name=os.getenv("AARI_EMAIL_NAME", "").strip(),
                 password=os.getenv("AARI_EMAIL_PASSWORD", ""),
