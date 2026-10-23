@@ -222,10 +222,61 @@ def resolve_stage(requested: str, run_date: date, now: datetime) -> str | None:
     if requested != "auto":
         return requested
     if run_date.weekday() == 2:  # Wednesday
-        return "oldshore" if now.time() < dt_time(12, 0) else "wednesday"
+        if now.time() < dt_time(12, 0):
+            return "oldshore"
+        if now.time() < dt_time(15, 0):
+            return "wednesday"
+        return "report"
     if run_date.weekday() == 3:  # Thursday
         return "thursday"
     return None
+
+
+def build_stage_jobs(run_date: date, stage: str) -> list[CopyJob]:
+    """Wednesday's later runs retry old_shore as well as the main distribution."""
+    if stage == "wednesday":
+        return build_jobs(run_date, "oldshore") + build_jobs(run_date, "wednesday")
+    return build_jobs(run_date, stage)
+
+
+def create_next_week_template_folder(run_date: date, dry_run: bool) -> Result:
+    """Create next Wednesday's folder structure without overwriting existing work."""
+    next_date = run_date + timedelta(days=7)
+    target_root = SOURCE_ROOT / next_date.isoformat()
+    subfolders = ("LVP", "PIC", "SHP", "old_shore", "sigrid", "website")
+    if dry_run:
+        return Result("Шаблон следующей недели", "DRY-RUN", f"будет создана/дополнена папка {target_root} с подпапками: {', '.join(subfolders)}")
+    try:
+        target_root.mkdir(parents=True, exist_ok=True)
+        created: list[str] = []
+        existing: list[str] = []
+        for name in subfolders:
+            path = target_root / name
+            if path.exists():
+                if not path.is_dir():
+                    return Result("Шаблон следующей недели", "ERROR", f"{path} уже существует, но это не папка")
+                existing.append(name)
+            else:
+                path.mkdir()
+                created.append(name)
+        details = []
+        if created:
+            details.append("созданы: " + ", ".join(created))
+        if existing:
+            details.append("уже существовали и сохранены: " + ", ".join(existing))
+        result = Result("Шаблон следующей недели", "OK", f"{target_root}; " + "; ".join(details))
+        LOG.info("NEXT_WEEK_FOLDER | %s | %s", target_root, result.detail)
+        return result
+    except OSError as exc:
+        LOG.exception("NEXT_WEEK_FOLDER_ERROR | %s", target_root)
+        return Result("Шаблон следующей недели", "ERROR", f"не удалось создать {target_root}: {exc}")
+
+
+def read_status_snapshot() -> str:
+    try:
+        return STATUS_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return f"Файл статуса не найден: {STATUS_FILE}. Проверьте журнал {LOG_FILE}."
 
 
 def write_status(run_date: date, stage: str, dry_run: bool, results: Sequence[Result]) -> None:
@@ -258,7 +309,7 @@ def write_status(run_date: date, stage: str, dry_run: bool, results: Sequence[Re
 def main() -> int:
     parser = argparse.ArgumentParser(description="Автоматизация рассылки и публикации результатов Обобщёнки.")
     parser.add_argument("--date", help="Дата запуска для тестирования, YYYY-MM-DD.")
-    parser.add_argument("--stage", choices=("auto", "validate", "oldshore", "wednesday", "thursday"), default="auto")
+    parser.add_argument("--stage", choices=("auto", "validate", "oldshore", "wednesday", "thursday", "report"), default="auto")
     parser.add_argument("--execute", action="store_true", help="Выполнить копирование и отправку. Без флага работает dry-run.")
     parser.add_argument("--resend-changed-email", action="store_true", help="Разрешить повторную отправку изменившихся вложений после проверки экспертом.")
     args = parser.parse_args()
@@ -273,13 +324,43 @@ def main() -> int:
     LOG.info("START | date=%s | stage=%s | dry_run=%s", run_date, stage, dry_run)
     results: list[Result] = []
 
+    if stage == "report":
+        folder_result = create_next_week_template_folder(run_date, dry_run)
+        LOG.info("[%s] %s: %s", folder_result.status, folder_result.name, folder_result.detail)
+        status_snapshot = read_status_snapshot()
+        chart = product_date(run_date)
+        subject = f"Обобщёнка: отчёт за {russian_date_range(chart)}"
+        report_body = (
+            "Еженедельный отчёт по автоматизации «Обобщёнка»\\n"
+            f"Дата формирования: {datetime.now():%Y-%m-%d %H:%M:%S}\\n"
+            f"Период карты: {russian_date_range(chart)}\\n\\n"
+            f"Подготовка каталога следующего выпуска: [{folder_result.status}] {folder_result.detail}\\n\\n"
+            "Состояние основных операций (последний STATUS.txt):\\n"
+            f"{status_snapshot}\\n\\n"
+            f"Полный журнал: {LOG_FILE}\\n"
+        )
+        from email_sender import parse_report_recipients, send_weekly_report
+        report_result = send_weekly_report(
+            subject, report_body, run_date, log_path=LOG_FILE,
+            smtp_server=os.getenv("AARI_SMTP_SERVER", "zmail.aari.ru"),
+            smtp_port=int(os.getenv("AARI_SMTP_PORT", "465")),
+            sender_email=os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
+            sender_name=os.getenv("AARI_EMAIL_NAME", "").strip(),
+            password=os.getenv("AARI_EMAIL_PASSWORD", ""),
+            recipient_list=parse_report_recipients(os.getenv("AARI_REPORT_RECIPIENTS", "")),
+            dry_run=dry_run,
+        )
+        LOG.info("[%s] %s: %s", report_result.status, report_result.name, report_result.detail)
+        report_failed = report_result.status in {"ERROR", "CONFIG_ERROR", "MAIL_ERROR", "REVIEW_REQUIRED"}
+        return 1 if report_failed or folder_result.status == "ERROR" else 0
+
     if stage == "validate":
         release_day = run_date if run_date.weekday() == 2 else run_date - timedelta(days=1)
-        for job in build_jobs(release_day, "wednesday"):
+        for job in build_stage_jobs(release_day, "wednesday"):
             errors = inspect_job(job)
             results.append(Result(job.name, "ERROR" if errors else "OK", "; ".join(errors) if errors else f"файлы проверены: {len(job.sources)}"))
     elif stage != "inactive":
-        for job in build_jobs(run_date, stage):
+        for job in build_stage_jobs(run_date, stage):
             result = copy_job(job, dry_run)
             results.append(result)
             LOG.info("[%s] %s: %s", result.status, result.name, result.detail)
