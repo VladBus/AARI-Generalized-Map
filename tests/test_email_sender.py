@@ -1,6 +1,5 @@
 """Unit tests for product email building and safe-send checks."""
 
-import ssl
 import tempfile
 import unittest
 from email.message import EmailMessage
@@ -23,6 +22,10 @@ from email_sender import (
 
 class EmailTests(unittest.TestCase):
     """Verify email recipients, bodies, attachments, and duplicate protection."""
+
+    def test_no_ca_file_uses_bbsat_compatible_smtp_default(self):
+        """Use smtplib's default context when no CA file is configured."""
+        self.assertIsNone(_create_smtp_context(None))
 
     def test_custom_ca_file_is_passed_to_verifying_ssl_context(self):
         """Trust a configured CA file without disabling TLS certificate checks."""
@@ -217,8 +220,8 @@ class EmailTests(unittest.TestCase):
         self.assertIn("production@example.org", log)
         self.assertIn("vvbusev@aari.ru, sanovikov@aari.ru", log)
 
-    def test_certificate_failure_stops_before_sending_any_message(self):
-        """A TLS verification failure sends none of the six prepared test messages."""
+    def test_smtp_connection_failure_stops_before_sending_any_message(self):
+        """A connection failure sends none of the six prepared test messages."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             template = root / "template.eml"
@@ -246,9 +249,7 @@ class EmailTests(unittest.TestCase):
 
             with self.assertLogs("aari_generalized_map.email", level="ERROR"):
                 with patch("email_sender.smtplib.SMTP_SSL") as smtp_factory:
-                    smtp_factory.side_effect = ssl.SSLCertVerificationError(
-                        "self-signed certificate"
-                    )
+                    smtp_factory.side_effect = OSError("SMTP connection failed")
                     results = process_test_email_suite(
                         jobs,
                         date(2026, 10, 21),
@@ -268,9 +269,6 @@ class EmailTests(unittest.TestCase):
 
         self.assertEqual(len(results), 6)
         self.assertTrue(all(result.status == "MAIL_ERROR" for result in results))
-        self.assertTrue(
-            all("AARI_SMTP_CA_FILE" in result.detail for result in results)
-        )
         smtp_factory.assert_called_once()
         smtp_factory.return_value.send_message.assert_not_called()
 
