@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$EnableLiveMode
 )
 
@@ -39,10 +39,10 @@ $xml = @"
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo><Description>Автоматизация рассылки и публикации Обобщённой карты ААНИИ</Description></RegistrationInfo>
   <Triggers>
-    <CalendarTrigger><StartBoundary>${wed11Boundary}</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT5M</Interval><Duration>PT55M</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><ScheduleByWeek><DaysOfWeek><Wednesday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
-    <CalendarTrigger><StartBoundary>${wed14Boundary}</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT5M</Interval><Duration>PT55M</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><ScheduleByWeek><DaysOfWeek><Wednesday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
-    <CalendarTrigger><StartBoundary>${thu14Boundary}</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT5M</Interval><Duration>PT55M</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><ScheduleByWeek><DaysOfWeek><Thursday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
-    <CalendarTrigger><StartBoundary>${wed15Boundary}</StartBoundary><Enabled>true</Enabled><ScheduleByWeek><DaysOfWeek><Wednesday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
+    <CalendarTrigger><StartBoundary>$($wed11Boundary)</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT5M</Interval><Duration>PT55M</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><ScheduleByWeek><DaysOfWeek><Wednesday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
+    <CalendarTrigger><StartBoundary>$($wed14Boundary)</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT5M</Interval><Duration>PT55M</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><ScheduleByWeek><DaysOfWeek><Wednesday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
+    <CalendarTrigger><StartBoundary>$($thu14Boundary)</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT5M</Interval><Duration>PT55M</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><ScheduleByWeek><DaysOfWeek><Thursday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
+    <CalendarTrigger><StartBoundary>$($wed15Boundary)</StartBoundary><Enabled>true</Enabled><ScheduleByWeek><DaysOfWeek><Wednesday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
   </Triggers>
   <Principals><Principal id="Author"><UserId>${userId}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings>
@@ -54,7 +54,6 @@ $xml = @"
   <Actions Context="Author"><Exec><Command>${command}</Command><Arguments>${arguments}</Arguments><WorkingDirectory>${projectRoot}</WorkingDirectory></Exec></Actions>
 </Task>
 "@
-$xml = $xml.Replace('${', '$' + '{')
 Register-ScheduledTask -TaskName $taskName -Xml $xml -Force | Out-Null
 Write-Host "Задача '$taskName' зарегистрирована:"
 Write-Host '  Среда: 11:00–11:50 (old_shore также повторно проверяется в 14:00–14:50)'
