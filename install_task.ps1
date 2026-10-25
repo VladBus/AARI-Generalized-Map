@@ -1,4 +1,9 @@
-# Register one portable Task Scheduler task with four triggers and a single BAT launcher.
+param(
+    [switch]$EnableLiveMode
+)
+
+# Register one Task Scheduler task with four triggers and a single BAT launcher.
+# The default is DRY-RUN. Pass -EnableLiveMode only after operational checks.
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $bat = Join-Path $projectRoot 'run_aari_generalized_map.bat'
@@ -19,7 +24,10 @@ function Get-NextStartBoundary {
 $taskName = 'AARI-Generalized-Map'
 $userId = "$env:USERDOMAIN\$env:USERNAME"
 $command = "$env:WINDIR\System32\cmd.exe"
-$arguments = '/d /c "' + $bat + '" --stage auto --execute'
+$arguments = '/d /c "' + $bat + '" --stage auto'
+if ($EnableLiveMode) {
+    $arguments += ' --execute'
+}
 $wed11Boundary = Get-NextStartBoundary -Day ([System.DayOfWeek]::Wednesday) -Time '11:00:00'
 $wed14Boundary = Get-NextStartBoundary -Day ([System.DayOfWeek]::Wednesday) -Time '14:00:00'
 $wed15Boundary = Get-NextStartBoundary -Day ([System.DayOfWeek]::Wednesday) -Time '15:00:00'
@@ -53,4 +61,10 @@ Write-Host '  Среда: 11:00–11:50 (old_shore также повторно �
 Write-Host '  Среда: 14:00–14:50 (основные копии и пять продуктовых писем)'
 Write-Host '  Среда: 15:00 (еженедельный статусный отчёт и создание папки следующего выпуска)'
 Write-Host '  Четверг: 14:00–14:50 (LVP и сайт за предыдущую неделю)'
+if ($EnableLiveMode) {
+    Write-Host '  Режим: РАБОЧИЙ (--execute включён).'
+} else {
+    Write-Host '  Режим: DRY-RUN (копирование и рабочая рассылка отключены).'
+    Write-Host '  После проверки для рабочего режима потребуется отдельный запуск: .\install_task.ps1 -EnableLiveMode'
+}
 Write-Host 'Все триггеры используют один BAT. Для сетевых ресурсов требуется вход в Windows под учётной записью с соответствующими правами.'
