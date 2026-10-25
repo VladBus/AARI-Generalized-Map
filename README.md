@@ -75,7 +75,7 @@
 
 ### ⛔ Важное предупреждение о Планировщике
 
-Файл `install_task.ps1` уже находится в репозитории, но его **не следует запускать до отдельной проверки и подтверждения рабочего расписания**. Скрипт регистрирует задачу с параметром `--execute`; после установки задача будет выполнять реальные операции с сетевыми каталогами и почтой. До этого необходимо подтвердить адреса источников и назначения, проверить пять почтовых шаблонов и получателей, а также согласовать первый рабочий запуск.
+Файл `install_task.ps1` регистрирует задачу **в режиме `dry-run` по умолчанию**: без `--execute` программа проверяет источники и пишет служебные журналы, но не копирует продуктовые файлы, не отправляет рабочие письма и не создаёт каталог следующего выпуска. Это позволяет сначала проверить, что Планировщик запускает задачу под нужной учётной записью и что она видит исходные сетевые файлы. После успешной проверки и отдельного согласования рабочего запуска параметр `-EnableLiveMode` перерегистрирует эту же задачу с `--execute` и включает реальные операции. Пока проверка не завершена, **не добавляйте `-EnableLiveMode`**.
 
 ## 🧰 Технологии
 
@@ -246,7 +246,7 @@ notepad .env
 
 ## 🇬🇧 English summary
 
-Windows automation for distributing already-prepared AARI Arctic overview chart products. It validates expected filenames, shapefile components and approximate sizes; prepares copy jobs for network shares; builds five template-based emails; handles previous-week website material on Thursday; and maintains concise status and detailed logs. QGIS chart compilation remains a manual expert task. The application defaults to dry-run. An isolated `mail-test` stage previews or explicitly sends six `[TEST]` messages only to `vvbusev@aari.ru` and `sanovikov@aari.ru`; it never uses production template recipients for delivery and never copies product files. The Windows Task Scheduler installer exists in the repository, but it has not yet been validated on the target workstation and registers a task with live `--execute` enabled.
+Windows automation for distributing already-prepared AARI Arctic overview chart products. It validates expected filenames, shapefile components and approximate sizes; prepares copy jobs for network shares; builds five template-based emails; handles previous-week website material on Thursday; and maintains concise status and detailed logs. QGIS chart compilation remains a manual expert task. The application defaults to dry-run. An isolated `mail-test` stage previews or explicitly sends six `[TEST]` messages only to `vvbusev@aari.ru` and `sanovikov@aari.ru`; it never uses production template recipients for delivery and never copies product files. The Windows Task Scheduler installer exists in the repository and registers a scheduled task in `dry-run` by default; the explicit `-EnableLiveMode` switch adds `--execute` after operational validation.
 
 ---
 
