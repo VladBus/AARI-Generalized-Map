@@ -70,6 +70,17 @@ class EmailTests(unittest.TestCase):
             jobs[4].subject, "Обобщенная карта Арктики за 18-20 октября 2026 года"
         )
 
+    def test_common_bmp_template_uses_updated_recipient(self):
+        """Use the current recipient in the active production BMP template."""
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "email_templates"
+            / "Общая_bmp.eml"
+        )
+        content = template.read_text(encoding="utf-8")
+        self.assertIn("To: eslazutkina@aari.ru", content)
+        self.assertNotIn("karan@aari.ru", content)
+
     def test_template_body_and_recipients_are_preserved(self):
         """Keep template recipients and body text while changing the subject."""
         with tempfile.TemporaryDirectory() as tmp:
