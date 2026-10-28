@@ -92,6 +92,10 @@ class WeeklyOperationsTests(unittest.TestCase):
                 self.assertIn("Проверка источников: 1 групп; ошибок: 0", same_release)
                 self.assertIn("ЭТАП: wednesday", same_release)
                 self.assertIn("ЭТАП: thursday", same_release)
+                self.assertIn("Режим последнего запуска: DRY-RUN", same_release)
+                self.assertIn("Результат последнего запуска: COMPLETED", same_release)
+                self.assertIn("РЕЖИМ: DRY-RUN | ИТОГ: COMPLETED", same_release)
+                self.assertIn("[PLANNED] LVP_WAVE", same_release)
                 self.assertIn("1 JPG -> target directory", same_release)
                 self.assertIn("4 SHP files -> LVP_WAVE", same_release)
                 self.assertNotIn("very-long", same_release)
@@ -108,6 +112,29 @@ class WeeklyOperationsTests(unittest.TestCase):
                 self.assertIn("Выпуск: 2026-10-28", next_release)
                 self.assertNotIn("ЭТАП: thursday", next_release)
                 self.assertNotIn("target directory", next_release)
+
+    def test_status_marks_blocked_stage_as_failed(self):
+        """Keep the mode distinct from an unsuccessful dry-run outcome."""
+        with tempfile.TemporaryDirectory() as tmp:
+            status_path = Path(tmp) / "STATUS.txt"
+            with patch.object(main, "STATUS_FILE", status_path):
+                main.write_status(
+                    date(2026, 10, 28),
+                    "oldshore",
+                    True,
+                    [
+                        main.Result(
+                            "Арктика SHP по старому берегу",
+                            "BLOCKED",
+                            "не найден файл 20261027О.shp",
+                        )
+                    ],
+                )
+            status = status_path.read_text(encoding="utf-8")
+        self.assertIn("Режим последнего запуска: DRY-RUN", status)
+        self.assertIn("Результат последнего запуска: FAILED", status)
+        self.assertIn("проблемных групп: 1", status)
+        self.assertIn("[BLOCKED] Арктика SHP по старому берегу", status)
 
     def test_recipients_accept_commas_semicolons_and_spaces(self):
         """Parse the configurable weekly report recipient list."""
