@@ -515,7 +515,7 @@ def read_status_snapshot() -> str:
 def write_status(
     run_date: date, stage: str, dry_run: bool, results: Sequence[Result]
 ) -> None:
-    """Write a concise current-release summary; detailed events belong in the log."""
+    """Write a concise release summary with separate mode and outcome fields."""
     release_folder_date = run_date
     if stage == "thursday" or (stage == "validate" and run_date.weekday() != 2):
         release_folder_date = run_date - timedelta(days=1)
@@ -562,8 +562,47 @@ def write_status(
                 current_lines.pop()
             previous_sections[current_stage] = current_lines
 
-    mode = "DRY-RUN — без копирования/отправки" if dry_run else "РАБОЧИЙ РЕЖИМ"
-    stage_lines = [f"ЭТАП: {stage} | {mode} | {datetime.now():%Y-%m-%d %H:%M:%S}"]
+    mode = "DRY-RUN" if dry_run else "LIVE"
+    failure_statuses = {
+        "BLOCKED",
+        "ERROR",
+        "CONFIG_ERROR",
+        "MAIL_ERROR",
+        "REVIEW_REQUIRED",
+        "NOT_SENT",
+    }
+    failures = [result for result in results if result.status in failure_statuses]
+    waiting = any(result.status == "WAITING" for result in results)
+    if not results:
+        outcome = "NO_ACTIONS"
+    elif failures:
+        completed_parts = [
+            result
+            for result in results
+            if result.status not in failure_statuses and result.status != "WAITING"
+        ]
+        outcome = "PARTIAL" if completed_parts else "FAILED"
+    elif waiting:
+        outcome = "IN_PROGRESS"
+    else:
+        outcome = "COMPLETED"
+
+    summary = (
+        f"обработано групп/действий: {len(results)}; "
+        f"проблемных групп: {len(failures)}"
+    )
+    if dry_run:
+        summary += "; фактические копирования и рабочая рассылка не выполнялись"
+    elif waiting:
+        summary += "; часть действий ожидает следующего запуска"
+
+    stage_lines = [
+        (
+            f"ЭТАП: {stage} | РЕЖИМ: {mode} | ИТОГ: {outcome} | "
+            f"{datetime.now():%Y-%m-%d %H:%M:%S}"
+        ),
+        f"  Сводка: {summary}.",
+    ]
     if stage == "validate":
         issues = [result for result in results if result.status != "OK"]
         stage_lines.append(
@@ -578,7 +617,10 @@ def write_status(
             detail = result.detail.replace("\\n", " ").replace("\n", " ").strip()
             if len(detail) > 260:
                 detail = detail[:257] + "..."
-            stage_lines.append(f"  [{result.status}] {result.name}: {detail}")
+            display_status = (
+                "PLANNED" if dry_run and result.status == "DRY-RUN" else result.status
+            )
+            stage_lines.append(f"  [{display_status}] {result.name}: {detail}")
     else:
         stage_lines.append("  Нет операций в этом запуске.")
 
@@ -591,7 +633,13 @@ def write_status(
             f"Выпуск: {release_folder_date.isoformat()} | карта: "
             f"{chart_date.isoformat()} | период: {russian_date_range(chart_date)}"
         ),
-        f"Последний запуск: {stage} | {mode}",
+        f"Последний запуск: {stage}",
+        (
+            f"Режим последнего запуска: {mode} — "
+            f"{'фактические копирования и рабочая рассылка отключены' if dry_run else 'рабочие операции разрешены'}"
+        ),
+        f"Результат последнего запуска: {outcome}",
+        f"Сводка последнего запуска: {summary}.",
         f"Исходный каталог: {SOURCE_ROOT}",
         f"Подробный журнал (INFO/WARNING/ERROR): {LOG_FILE}",
         "",
@@ -605,7 +653,6 @@ def write_status(
         STATUS_FILE.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     except OSError as exc:
         LOG.error("Не удалось обновить STATUS.txt (%s): %s", STATUS_FILE, exc)
-
 
 def main() -> int:
     """Parse CLI options and run a validation, copy, or report stage."""
