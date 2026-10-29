@@ -44,6 +44,28 @@ class EmailTests(unittest.TestCase):
         server.starttls.assert_called_once_with(context=None)
         server.login.assert_called_once_with("sever@aari.ru", "test-password")
 
+    def test_auto_smtp_skips_auth_when_password_is_missing(self):
+        """Allow server policy to decide whether unauthenticated relay is permitted."""
+        with patch("email_sender.smtplib.SMTP") as smtp_factory:
+            server = smtp_factory.return_value
+            server.has_extn.return_value = True
+            actual = _open_smtp(
+                "zmail.aari.ru", 25, "sever@aari.ru", "", None, "auto", "auto"
+            )
+
+        self.assertIs(actual, server)
+        server.starttls.assert_called_once_with(context=None)
+        server.login.assert_not_called()
+
+    def test_required_auth_fails_without_password(self):
+        """Required authentication must not silently turn into unauthenticated SMTP."""
+        with patch("email_sender.smtplib.SMTP") as smtp_factory:
+            with self.assertRaises(smtplib.SMTPException):
+                _open_smtp(
+                    "zmail.aari.ru", 25, "sever@aari.ru", "", None, "auto", "required"
+                )
+        smtp_factory.assert_not_called()
+
     def test_auto_smtp_refuses_port25_without_starttls(self):
         """Never send SMTP credentials when the server does not advertise STARTTLS."""
         with patch("email_sender.smtplib.SMTP") as smtp_factory:
@@ -56,6 +78,16 @@ class EmailTests(unittest.TestCase):
 
         server.login.assert_not_called()
         server.close.assert_called_once()
+
+    def test_none_auth_mode_never_logs_in_even_if_password_exists(self):
+        """Explicit no-auth mode skips SMTP login even if a password is present."""
+        with patch("email_sender.smtplib.SMTP") as smtp_factory:
+            server = smtp_factory.return_value
+            server.has_extn.return_value = True
+            _open_smtp(
+                "zmail.aari.ru", 25, "sever@aari.ru", "unused", None, "auto", "none"
+            )
+        server.login.assert_not_called()
 
     def test_custom_ca_file_is_passed_to_verifying_ssl_context(self):
         """Trust a configured CA file without disabling TLS certificate checks."""
@@ -381,8 +413,9 @@ class EmailTests(unittest.TestCase):
                 )
 
             with self.assertLogs("aari_generalized_map.email", level="INFO"):
-                with patch("email_sender.smtplib.SMTP_SSL") as smtp_factory:
+                with patch("email_sender.smtplib.SMTP") as smtp_factory:
                     smtp = smtp_factory.return_value
+                    smtp.has_extn.return_value = True
                     smtp.send_message.return_value = {}
                     results = process_test_email_suite(
                         jobs,
@@ -391,10 +424,11 @@ class EmailTests(unittest.TestCase):
                         "Weekly report body",
                         dry_run=False,
                         smtp_server="smtp.example.org",
-                        smtp_port=465,
+                        smtp_port=25,
                         sender_email="sender@example.org",
                         sender_name="Test sender",
-                        password="not-a-real-password",
+                        password="",
+                        smtp_auth_mode="auto",
                         production_report_recipients=["production-report@example.org"],
                         size_baselines={},
                         min_size_ratio=0.35,
@@ -404,9 +438,8 @@ class EmailTests(unittest.TestCase):
             self.assertEqual(len(results), 6)
             self.assertTrue(all(result.status == "SENT" for result in results))
             smtp_factory.assert_called_once()
-            smtp.login.assert_called_once_with(
-                "sender@example.org", "not-a-real-password"
-            )
+            smtp.login.assert_not_called()
+            smtp.starttls.assert_called_once_with(context=None)
             self.assertEqual(smtp.send_message.call_count, 6)
             smtp.quit.assert_called_once()
             report_body = smtp.send_message.call_args_list[-1].args[0].get_content()
