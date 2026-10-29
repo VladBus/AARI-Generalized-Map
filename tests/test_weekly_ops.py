@@ -50,6 +50,18 @@ class WeeklyOperationsTests(unittest.TestCase):
             "thursday-report",
         )
 
+    def test_wednesday_email_gate_checks_time_after_copy_work(self):
+        """A delayed copy run can send after 14:50 even if it started earlier."""
+        with patch.object(main, "datetime") as mocked_datetime:
+            mocked_datetime.now.return_value = datetime(2026, 10, 21, 14, 49, 59)
+            self.assertTrue(main.should_defer_wednesday_email())
+
+            mocked_datetime.now.return_value = datetime(2026, 10, 21, 14, 50)
+            self.assertFalse(main.should_defer_wednesday_email())
+
+            mocked_datetime.now.return_value = datetime(2026, 10, 21, 14, 55)
+            self.assertFalse(main.should_defer_wednesday_email())
+
     def test_next_week_folders_are_created_and_existing_files_preserved(self):
         """Create missing subfolders while preserving existing expert files."""
         with tempfile.TemporaryDirectory() as tmp:
