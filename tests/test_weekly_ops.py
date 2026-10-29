@@ -184,7 +184,7 @@ class WeeklyOperationsTests(unittest.TestCase):
 
             def record_log(message, *args):
                 with log.open("a", encoding="utf-8") as stream:
-                    stream.write((message % args if args else message) + "\\n")
+                    stream.write((message % args if args else message) + "\n")
 
             with (
                 patch("email_sender.LOG.info", side_effect=record_log),
