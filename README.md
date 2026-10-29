@@ -123,7 +123,8 @@ notepad .env
 | `AARI_ICECHARTS_V_ROOT`                      | UNC-путь, соответствующий диску `V:\IceCharts`                                        |
 | `AARI_LVP_WAVE_ROOT`                         | UNC-путь, соответствующий диску `Z:\LVP_WAVE`                                         |
 | `AARI_WEBSITE_ROOT`                          | Каталог сайта `\\data.aari.ru\d0015\arctic`                                           |
-| `AARI_SMTP_SERVER`, `AARI_SMTP_PORT`, `AARI_SMTP_SECURITY` | SMTP-сервер, порт и защита; для общего ящика — `zmail.aari.ru`, `25`, `auto` |\n| `AARI_SMTP_AUTH_MODE`                      | `auto`: без пароля пропускает SMTP AUTH, с паролем авторизуется; `required`/`none` принудительные режимы |
+| `AARI_SMTP_SERVER`, `AARI_SMTP_PORT`, `AARI_SMTP_SECURITY` | SMTP-сервер, порт и защита; для общего ящика — `zmail.aari.ru`, `25`, `auto` |
+| `AARI_SMTP_AUTH_MODE`                      | `auto`: без пароля пропускает SMTP AUTH, с паролем авторизуется; `required`/`none` принудительные режимы |
 | `AARI_SMTP_CA_FILE`                          | Необязательный путь к доверенному CA-сертификату/цепочке PEM для проверки TLS         |
 | `AARI_SMTP_USERNAME`                         | SMTP-логин; для общего ящика `sever@aari.ru`                                          |
 | `AARI_EMAIL_ADDRESS`                         | Адрес отправителя в заголовке и SMTP-конверте                                        |
