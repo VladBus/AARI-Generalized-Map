@@ -175,7 +175,7 @@ class EmailTests(unittest.TestCase):
                 test_notice=True,
             )
         self.assertEqual(recipients, list(TEST_RECIPIENTS))
-        self.assertEqual(message["To"], "vvbusev@aari.ru, sanovikov@aari.ru")
+        self.assertEqual(message["To"], "vvbusev@aari.ru, sanovikov@aari.ru, belgesova@aari.ru")
         self.assertIsNone(message.get("Cc"))
         self.assertIsNone(message.get("Bcc"))
         self.assertIsNone(message.get("Reply-To"))
@@ -246,7 +246,7 @@ class EmailTests(unittest.TestCase):
         self.assertIn("TEST_MAIL_PLAN", log)
         self.assertIn("TEST_REPORT_PLAN", log)
         self.assertIn("production@example.org", log)
-        self.assertIn("vvbusev@aari.ru, sanovikov@aari.ru", log)
+        self.assertIn("vvbusev@aari.ru, sanovikov@aari.ru, belgesova@aari.ru", log)
 
     def test_smtp_connection_failure_stops_before_sending_any_message(self):
         """A connection failure sends none of the six prepared test messages."""
@@ -362,7 +362,7 @@ class EmailTests(unittest.TestCase):
             for call in smtp.send_message.call_args_list:
                 message = call.args[0]
                 self.assertEqual(call.kwargs["to_addrs"], list(TEST_RECIPIENTS))
-                self.assertEqual(message["To"], "vvbusev@aari.ru, sanovikov@aari.ru")
+                self.assertEqual(message["To"], "vvbusev@aari.ru, sanovikov@aari.ru, belgesova@aari.ru")
                 self.assertTrue(str(message["Subject"]).startswith("[TEST]"))
                 self.assertIsNone(message.get("Cc"))
                 self.assertIsNone(message.get("Bcc"))
