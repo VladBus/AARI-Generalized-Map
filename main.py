@@ -446,7 +446,9 @@ def resolve_stage(requested: str, run_date: date, now: datetime) -> str | None:
             return "wednesday"
         return "report"
     if run_date.weekday() == 3:  # Thursday
-        return "thursday"
+        if now.time() < dt_time(15, 0):
+            return "thursday"
+        return "thursday-report"
     return None
 
 
@@ -517,7 +519,9 @@ def write_status(
 ) -> None:
     """Write a concise release summary with separate mode and outcome fields."""
     release_folder_date = run_date
-    if stage == "thursday" or (stage == "validate" and run_date.weekday() != 2):
+    if stage in {"thursday", "thursday-report"} or (
+        stage == "validate" and run_date.weekday() != 2
+    ):
         release_folder_date = run_date - timedelta(days=1)
 
     previous_sections: dict[str, list[str]] = {}
@@ -668,6 +672,7 @@ def main() -> int:
             "oldshore",
             "wednesday",
             "thursday",
+            "thursday-report",
             "report",
             "mail-test",
         ),
@@ -793,31 +798,57 @@ def main() -> int:
         )
         return 1 if errors else 0
 
-    if stage == "report":
-        folder_result = create_next_week_template_folder(run_date, dry_run)
-        LOG.info(
-            "[%s] %s: %s",
-            folder_result.status,
-            folder_result.name,
-            folder_result.detail,
+    if stage in {"report", "thursday-report"}:
+        is_thursday_report = stage == "thursday-report"
+        report_release_date = (
+            run_date - timedelta(days=1) if is_thursday_report else run_date
         )
         status_snapshot = read_status_snapshot()
-        chart = product_date(run_date)
-        subject = f"Обобщёнка: отчёт за {russian_date_range(chart)}"
-        report_body = (
-            "Еженедельный отчёт по автоматизации «Обобщёнка»\n"
-            f"Дата формирования: {datetime.now():%Y-%m-%d %H:%M:%S}\n"
-            f"Период карты: {russian_date_range(chart)}\n\n"
-            "Подготовка каталога следующего выпуска: "
-            f"[{folder_result.status}] {folder_result.detail}\n\n"
-            "Состояние основных операций (последний STATUS.txt):\n"
-            f"{status_snapshot}\n\n"
-            f"Полный журнал: {LOG_FILE}\n"
-        )
+        chart = product_date(report_release_date)
+        date_phrase = russian_date_range(chart)
+        folder_result: Result | None = None
+
+        if is_thursday_report:
+            subject = (
+                f"Обобщёнка: дополнение к отчёту за {date_phrase} (четверг)"
+            )
+            report_body = (
+                "Дополнительный отчёт по автоматизации «Обобщёнка» за четверг.\n"
+                f"Дата формирования: {datetime.now():%Y-%m-%d %H:%M:%S}\n"
+                f"Выпуск: {report_release_date.isoformat()}\n"
+                f"Период карты: {date_phrase}\n\n"
+                "Отчёт включает актуальное состояние после четверговых проверок "
+                "LVP и материалов сайта за предыдущую неделю.\n\n"
+                "Актуальный STATUS.txt перед отправкой отчёта:\n"
+                f"{status_snapshot}\n\n"
+                f"Полный журнал: {LOG_FILE}\n"
+            )
+            report_kind = "thursday"
+        else:
+            folder_result = create_next_week_template_folder(run_date, dry_run)
+            LOG.info(
+                "[%s] %s: %s",
+                folder_result.status,
+                folder_result.name,
+                folder_result.detail,
+            )
+            subject = f"Обобщёнка: отчёт за {date_phrase}"
+            report_body = (
+                "Еженедельный отчёт по автоматизации «Обобщёнка»\n"
+                f"Дата формирования: {datetime.now():%Y-%m-%d %H:%M:%S}\n"
+                f"Период карты: {date_phrase}\n\n"
+                "Подготовка каталога следующего выпуска: "
+                f"[{folder_result.status}] {folder_result.detail}\n\n"
+                "Состояние основных операций (последний STATUS.txt):\n"
+                f"{status_snapshot}\n\n"
+                f"Полный журнал: {LOG_FILE}\n"
+            )
+            report_kind = "wednesday"
+
         report_result = send_weekly_report(
             subject,
             report_body,
-            run_date,
+            report_release_date,
             log_path=LOG_FILE,
             smtp_server=os.getenv("AARI_SMTP_SERVER", "zmail.aari.ru"),
             smtp_port=int(os.getenv("AARI_SMTP_PORT", "465")),
@@ -829,6 +860,7 @@ def main() -> int:
                 os.getenv("AARI_REPORT_RECIPIENTS", "")
             ),
             dry_run=dry_run,
+            report_kind=report_kind,
         )
         LOG.info(
             "[%s] %s: %s",
@@ -842,14 +874,14 @@ def main() -> int:
             "MAIL_ERROR",
             "REVIEW_REQUIRED",
         }
-        results.extend(
-            [
-                folder_result,
-                Result(report_result.name, report_result.status, report_result.detail),
-            ]
+        if folder_result is not None:
+            results.append(folder_result)
+        results.append(
+            Result(report_result.name, report_result.status, report_result.detail)
         )
         write_status(run_date, stage, dry_run, results)
-        report_has_errors = report_failed or folder_result.status == "ERROR"
+        folder_failed = folder_result is not None and folder_result.status == "ERROR"
+        report_has_errors = report_failed or folder_failed
         LOG.info(
             "END | results=%s | errors=%d",
             len(results),
