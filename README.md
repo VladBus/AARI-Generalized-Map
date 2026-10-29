@@ -124,10 +124,11 @@ notepad .env
 | `AARI_LVP_WAVE_ROOT`                         | UNC-путь, соответствующий диску `Z:\LVP_WAVE`                                         |
 | `AARI_WEBSITE_ROOT`                          | Каталог сайта `\\data.aari.ru\d0015\arctic`                                           |
 | `AARI_SMTP_SERVER`, `AARI_SMTP_PORT`, `AARI_SMTP_SECURITY` | SMTP-сервер, порт и защита; для общего ящика — `zmail.aari.ru`, `25`, `auto` |
-| `AARI_SMTP_CA_FILE`                          | Необязательный путь к CA-сертификату PEM; без него поведение совпадает с BBSAT         |
-| `AARI_SMTP_USERNAME`                         | SMTP-логин; для общего ящика `sever@aari.ru`                                          |\n| `AARI_EMAIL_ADDRESS`                         | Адрес отправителя в заголовке и SMTP-конверте                                        |
+| `AARI_SMTP_CA_FILE`                          | Необязательный путь к доверенному CA-сертификату/цепочке PEM для проверки TLS         |
+| `AARI_SMTP_USERNAME`                         | SMTP-логин; для общего ящика `sever@aari.ru`                                          |
+| `AARI_EMAIL_ADDRESS`                         | Адрес отправителя в заголовке и SMTP-конверте                                        |
 | `AARI_EMAIL_NAME`                            | Отображаемое имя отправителя, необязательно                                           |
-| `AARI_EMAIL_PASSWORD`                        | Пароль SMTP — заполняется только локально                                             |
+| `AARI_MAIL_PASSWORD`                         | Пароль общего ящика; старый ключ `AARI_EMAIL_PASSWORD` поддерживается                |
 | `AARI_REPORT_RECIPIENTS`                     | Получатели еженедельного отчёта; адреса можно разделять запятой или точкой с запятой  |
 | `AARI_SIZE_MIN_RATIO`, `AARI_SIZE_MAX_RATIO` | Границы проверки размера файлов; по умолчанию `0.35` и `2.5`                          |
 | `AARI_LOG_LEVEL`                             | Уровень журнала; по умолчанию `INFO`                                                  |
