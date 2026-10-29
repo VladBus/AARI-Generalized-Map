@@ -26,6 +26,25 @@ TEST_RECIPIENTS = (
     "belgesova@aari.ru",
 )
 
+SIGNATURE_TEXT = (
+    "С уважением,\n\n"
+    "____________________\n\n"
+    'Центр ледовой и гидрометеорологической информации "Север"\n'
+    "ФГБУ «ААНИИ»\n"
+    "199397, Санкт-Петербург, ул. Беринга, д. 38, литера А\n"
+    "https://www.aari.ru/\n"
+    "e-mail: sever@aari.ru\n"
+    "тел: +7 (812) 337-31-81"
+)
+
+
+def _body_with_signature(body: str) -> str:
+    """Append the standard AARI Sever signature to generated report messages."""
+    normalized = body.rstrip()
+    if 'Центр ледовой и гидрометеорологической информации "Север"' in normalized:
+        return normalized + "\n"
+    return f"{normalized}\n\n{SIGNATURE_TEXT}\n"
+
 
 def _create_smtp_context(ca_file: str | None) -> ssl.SSLContext | None:
     """Use BBSAT-compatible SMTP defaults unless explicit certificate validation is configured."""
@@ -63,6 +82,52 @@ def _smtp_error_detail(exc: BaseException, ca_file: str | None) -> str:
     if isinstance(exc, FileNotFoundError) and ca_file:
         return f"{detail}; проверьте путь AARI_SMTP_CA_FILE в .env."
     return detail
+
+
+def _open_smtp(
+    smtp_server: str,
+    smtp_port: int,
+    username: str,
+    password: str,
+    ca_file: str | None,
+    security: str = "auto",
+) -> smtplib.SMTP:
+    """Connect and authenticate using SSL or mandatory STARTTLS, never plaintext auth."""
+    mode = (security or "auto").strip().casefold()
+    if mode == "auto":
+        mode = "ssl" if smtp_port == 465 else "starttls"
+    if mode not in {"ssl", "starttls"}:
+        raise smtplib.SMTPException(
+            f"Неподдерживаемый AARI_SMTP_SECURITY={security!r}; "
+            "допустимы auto, ssl или starttls."
+        )
+
+    context = _create_smtp_context(ca_file)
+    server: smtplib.SMTP | None = None
+    try:
+        if mode == "ssl":
+            server = smtplib.SMTP_SSL(
+                smtp_server, smtp_port, timeout=60, context=context
+            )
+        else:
+            server = smtplib.SMTP(smtp_server, smtp_port, timeout=60)
+            server.ehlo()
+            if not server.has_extn("starttls"):
+                raise smtplib.SMTPNotSupportedError(
+                    "SMTP-сервер не объявил STARTTLS; авторизация без TLS запрещена."
+                )
+            server.starttls(context=context)
+            server.ehlo()
+
+        server.login(username, password)
+        return server
+    except (OSError, smtplib.SMTPException):
+        if server is not None:
+            try:
+                server.close()
+            except (OSError, smtplib.SMTPException):
+                pass
+        raise
 
 
 @dataclass(frozen=True)
@@ -330,6 +395,8 @@ def process_email_job(
     min_size_ratio: float,
     max_size_ratio: float,
     smtp_ca_file: str | None = None,
+    smtp_username: str | None = None,
+    smtp_security: str = "auto",
     resend_changed: bool = False,
 ) -> EmailResult:
     """Validate and send one product email, avoiding silent duplicate sends."""
@@ -385,17 +452,18 @@ def process_email_job(
         )
     if not password:
         return EmailResult(
-            job.name, "CONFIG_ERROR", "не задан AARI_EMAIL_PASSWORD в .env"
+            job.name, "CONFIG_ERROR", "не задан AARI_MAIL_PASSWORD или AARI_EMAIL_PASSWORD в .env"
         )
 
     try:
-        server = smtplib.SMTP_SSL(
+        server = _open_smtp(
             smtp_server,
             smtp_port,
-            timeout=30,
-            context=_create_smtp_context(smtp_ca_file),
+            smtp_username or sender_email,
+            password,
+            smtp_ca_file,
+            smtp_security,
         )
-        server.login(sender_email, password)
     except (OSError, smtplib.SMTPException) as exc:
         LOG.error(
             "MAIL_FAILED_BEFORE_SEND|%s|%s|%s",
@@ -467,6 +535,8 @@ def process_email_jobs(
     min_size_ratio: float,
     max_size_ratio: float,
     smtp_ca_file: str | None = None,
+    smtp_username: str | None = None,
+    smtp_security: str = "auto",
     resend_changed: bool = False,
 ) -> list[EmailResult]:
     """Process all five product emails with explicit, checked SMTP options."""
@@ -486,6 +556,8 @@ def process_email_jobs(
             min_size_ratio=min_size_ratio,
             max_size_ratio=max_size_ratio,
             smtp_ca_file=smtp_ca_file,
+            smtp_username=smtp_username,
+            smtp_security=smtp_security,
             resend_changed=resend_changed,
         )
         results.append(result)
@@ -516,6 +588,8 @@ def send_weekly_report(
     recipient_list: Sequence[str],
     dry_run: bool,
     smtp_ca_file: str | None = None,
+    smtp_username: str | None = None,
+    smtp_security: str = "auto",
     report_kind: str = "wednesday",
 ) -> EmailResult:
     """Send a weekly report variant, tracking each variant separately in the normal log."""
@@ -539,6 +613,7 @@ def send_weekly_report(
             "Еженедельный отчёт", "CONFIG_ERROR", "не задан AARI_EMAIL_ADDRESS в .env"
         )
 
+    body = _body_with_signature(body)
     fingerprint = hashlib.sha256(
         (subject + "\0" + body + "\0" + ",".join(recipients)).encode("utf-8")
     ).hexdigest()
@@ -588,7 +663,7 @@ def send_weekly_report(
 
     if not password:
         return EmailResult(
-            "Еженедельный отчёт", "CONFIG_ERROR", "не задан AARI_EMAIL_PASSWORD в .env"
+            "Еженедельный отчёт", "CONFIG_ERROR", "не задан AARI_MAIL_PASSWORD или AARI_EMAIL_PASSWORD в .env"
         )
 
     message = EmailMessage(policy=policy.SMTP)
@@ -600,13 +675,14 @@ def send_weekly_report(
     message.set_content(body, charset="utf-8")
 
     try:
-        server = smtplib.SMTP_SSL(
+        server = _open_smtp(
             smtp_server,
             smtp_port,
-            timeout=30,
-            context=_create_smtp_context(smtp_ca_file),
+            smtp_username or sender_email,
+            password,
+            smtp_ca_file,
+            smtp_security,
         )
-        server.login(sender_email, password)
     except (OSError, smtplib.SMTPException) as exc:
         LOG.error(
             "REPORT_FAILED_BEFORE_SEND|%s|%s|%s",
@@ -678,8 +754,11 @@ def process_test_email_suite(
     min_size_ratio: float,
     max_size_ratio: float,
     smtp_ca_file: str | None = None,
+    smtp_username: str | None = None,
+    smtp_security: str = "auto",
 ) -> list[EmailResult]:
     """Preview or send six test messages, hard-routed to TEST_RECIPIENTS only."""
+    report_body = _body_with_signature(report_body)
     report_key = "weekly_report_test"
     ordered = [(job.key, job.name) for job in jobs] + [
         (report_key, "Тест еженедельного отчёта")
@@ -847,19 +926,20 @@ def process_test_email_suite(
             EmailResult(
                 name,
                 "CONFIG_ERROR",
-                "не задан AARI_EMAIL_PASSWORD в .env; ничего не отправлено",
+                "не задан AARI_MAIL_PASSWORD или AARI_EMAIL_PASSWORD в .env; ничего не отправлено",
             )
             for _key, name in ordered
         ]
 
     try:
-        server = smtplib.SMTP_SSL(
+        server = _open_smtp(
             smtp_server,
             smtp_port,
-            timeout=30,
-            context=_create_smtp_context(smtp_ca_file),
+            smtp_username or sender_email,
+            password,
+            smtp_ca_file,
+            smtp_security,
         )
-        server.login(sender_email, password)
         LOG.info(
             "TEST_SMTP_AUTH_OK | date=%s | server=%s | port=%s",
             release_date.isoformat(),
