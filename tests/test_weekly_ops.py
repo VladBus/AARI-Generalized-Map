@@ -36,6 +36,19 @@ class WeeklyOperationsTests(unittest.TestCase):
             main.resolve_stage("auto", run_day, datetime(2026, 10, 21, 15, 0)),
             "report",
         )
+        thursday = date(2026, 10, 22)
+        self.assertEqual(
+            main.resolve_stage(
+                "auto", thursday, datetime(2026, 10, 22, 14, 55)
+            ),
+            "thursday",
+        )
+        self.assertEqual(
+            main.resolve_stage(
+                "auto", thursday, datetime(2026, 10, 22, 15, 0)
+            ),
+            "thursday-report",
+        )
 
     def test_next_week_folders_are_created_and_existing_files_preserved(self):
         """Create missing subfolders while preserving existing expert files."""
@@ -162,6 +175,52 @@ class WeeklyOperationsTests(unittest.TestCase):
                 dry_run=True,
             )
         self.assertEqual(result.status, "DRY-RUN")
+
+    def test_wednesday_and_thursday_reports_are_distinct_but_idempotent(self):
+        """Allow one Wednesday report and one Thursday addendum per release."""
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "run.log"
+            with patch("email_sender.smtplib.SMTP_SSL") as smtp_factory:
+                smtp = smtp_factory.return_value
+                smtp.send_message.return_value = {}
+                common = {
+                    "log_path": log,
+                    "smtp_server": "smtp.example.org",
+                    "smtp_port": 465,
+                    "sender_email": "sender@example.org",
+                    "sender_name": "Test Sender",
+                    "password": "test-password",
+                    "recipient_list": ["one@example.org", "two@example.org"],
+                    "dry_run": False,
+                }
+                wednesday = send_weekly_report(
+                    "Weekly report",
+                    "Wednesday status",
+                    date(2026, 10, 28),
+                    report_kind="wednesday",
+                    **common,
+                )
+                thursday = send_weekly_report(
+                    "Weekly report addendum",
+                    "Updated Thursday status",
+                    date(2026, 10, 28),
+                    report_kind="thursday",
+                    **common,
+                )
+                repeated_thursday = send_weekly_report(
+                    "Weekly report addendum",
+                    "Updated Thursday status",
+                    date(2026, 10, 28),
+                    report_kind="thursday",
+                    **common,
+                )
+            recorded = log.read_text(encoding="utf-8")
+
+        self.assertEqual(wednesday.status, "SENT")
+        self.assertEqual(thursday.status, "SENT")
+        self.assertEqual(repeated_thursday.status, "ALREADY_SENT")
+        self.assertIn("REPORT_SENT|2026-10-28|wednesday|", recorded)
+        self.assertIn("REPORT_SENT|2026-10-28|thursday|", recorded)
 
     def test_report_is_not_sent_twice_on_same_release_date(self):
         """Use the log marker to suppress a duplicate weekly report."""
