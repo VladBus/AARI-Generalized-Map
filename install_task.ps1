@@ -2,7 +2,7 @@
     [switch]$EnableLiveMode
 )
 
-# Register one Task Scheduler task with four triggers and a single BAT launcher.
+# Register one Task Scheduler task with five triggers and a single BAT launcher.
 # The default is DRY-RUN. Pass -EnableLiveMode only after operational checks.
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
@@ -32,19 +32,20 @@ $wed11Boundary = Get-NextStartBoundary -Day ([System.DayOfWeek]::Wednesday) -Tim
 $wed14Boundary = Get-NextStartBoundary -Day ([System.DayOfWeek]::Wednesday) -Time '14:00:00'
 $wed15Boundary = Get-NextStartBoundary -Day ([System.DayOfWeek]::Wednesday) -Time '15:00:00'
 $thu14Boundary = Get-NextStartBoundary -Day ([System.DayOfWeek]::Thursday) -Time '14:00:00'
+$thu15Boundary = Get-NextStartBoundary -Day ([System.DayOfWeek]::Thursday) -Time '15:00:00'
 
 # One task, one action, one BAT. Repeated windows use short-lived invocations.
-# Duration PT55M permits launches at :00, :05, ... :50.
+# Duration PT50M permits launches at :00, :05, ... :50 (inclusive).
 $xml = @"
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo><Description>Автоматизация рассылки и публикации Обобщённой карты ААНИИ</Description></RegistrationInfo>
   <Triggers>
-    <CalendarTrigger><StartBoundary>$($wed11Boundary)</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT5M</Interval><Duration>PT55M</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><ScheduleByWeek><DaysOfWeek><Wednesday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
-    <CalendarTrigger><StartBoundary>$($wed14Boundary)</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT5M</Interval><Duration>PT55M</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><ScheduleByWeek><DaysOfWeek><Wednesday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
-    <CalendarTrigger><StartBoundary>$($thu14Boundary)</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT5M</Interval><Duration>PT55M</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><ScheduleByWeek><DaysOfWeek><Thursday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
+    <CalendarTrigger><StartBoundary>$($wed11Boundary)</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT5M</Interval><Duration>PT50M</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><ScheduleByWeek><DaysOfWeek><Wednesday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
+    <CalendarTrigger><StartBoundary>$($wed14Boundary)</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT5M</Interval><Duration>PT50M</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><ScheduleByWeek><DaysOfWeek><Wednesday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
     <CalendarTrigger><StartBoundary>$($wed15Boundary)</StartBoundary><Enabled>true</Enabled><ScheduleByWeek><DaysOfWeek><Wednesday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
-  </Triggers>
-  <Principals><Principal id="Author"><UserId>${userId}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+    <CalendarTrigger><StartBoundary>$($thu14Boundary)</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT5M</Interval><Duration>PT50M</Duration><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><ScheduleByWeek><DaysOfWeek><Thursday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
+    <CalendarTrigger><StartBoundary>$($thu15Boundary)</StartBoundary><Enabled>true</Enabled><ScheduleByWeek><DaysOfWeek><Thursday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>
+  </Triggers>  <Principals><Principal id="Author"><UserId>${userId}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings>
     <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
@@ -57,9 +58,10 @@ $xml = @"
 Register-ScheduledTask -TaskName $taskName -Xml $xml -Force | Out-Null
 Write-Host "Задача '$taskName' зарегистрирована:"
 Write-Host '  Среда: 11:00–11:50 (old_shore также повторно проверяется в 14:00–14:50)'
-Write-Host '  Среда: 14:00–14:50 (основные копии и пять продуктовых писем)'
-Write-Host '  Среда: 15:00 (еженедельный статусный отчёт и создание папки следующего выпуска)'
+Write-Host '  Среда: 14:00–14:50 (основные копии; письма только на финальном запуске в 14:50)'
+Write-Host '  Среда: 15:00 (еженедельный отчёт и создание папки следующего выпуска)'
 Write-Host '  Четверг: 14:00–14:50 (LVP и сайт за предыдущую неделю)'
+Write-Host '  Четверг: 15:00 (дополнительный отчёт с результатами четверговых проверок)'
 if ($EnableLiveMode) {
     Write-Host '  Режим: РАБОЧИЙ (--execute включён).'
 } else {
