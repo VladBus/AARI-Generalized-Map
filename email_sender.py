@@ -91,8 +91,9 @@ def _open_smtp(
     password: str,
     ca_file: str | None,
     security: str = "auto",
+    auth_mode: str = "auto",
 ) -> smtplib.SMTP:
-    """Connect and authenticate using SSL or mandatory STARTTLS, never plaintext auth."""
+    """Connect securely; in auto auth mode, use SMTP AUTH only when a password exists."""
     mode = (security or "auto").strip().casefold()
     if mode == "auto":
         mode = "ssl" if smtp_port == 465 else "starttls"
@@ -101,6 +102,18 @@ def _open_smtp(
             f"Неподдерживаемый AARI_SMTP_SECURITY={security!r}; "
             "допустимы auto, ssl или starttls."
         )
+
+    auth = (auth_mode or "auto").strip().casefold()
+    if auth not in {"auto", "required", "none"}:
+        raise smtplib.SMTPException(
+            f"Неподдерживаемый AARI_SMTP_AUTH_MODE={auth_mode!r}; "
+            "допустимы auto, required или none."
+        )
+    if auth == "required" and not password:
+        raise smtplib.SMTPException(
+            "AARI_SMTP_AUTH_MODE=required, но пароль SMTP не задан."
+        )
+    should_authenticate = auth == "required" or (auth == "auto" and bool(password))
 
     context = _create_smtp_context(ca_file)
     server: smtplib.SMTP | None = None
@@ -119,7 +132,18 @@ def _open_smtp(
             server.starttls(context=context)
             server.ehlo()
 
-        server.login(username, password)
+        if should_authenticate:
+            if not username:
+                raise smtplib.SMTPException(
+                    "Для SMTP AUTH не задан AARI_SMTP_USERNAME."
+                )
+            server.login(username, password)
+        else:
+            LOG.info(
+                "SMTP_AUTH_SKIPPED | auth_mode=%s | reason=%s",
+                auth,
+                "password_not_configured" if auth == "auto" else "explicitly_disabled",
+            )
         return server
     except (OSError, smtplib.SMTPException):
         if server is not None:
@@ -397,6 +421,7 @@ def process_email_job(
     smtp_ca_file: str | None = None,
     smtp_username: str | None = None,
     smtp_security: str = "auto",
+    smtp_auth_mode: str = "auto",
     resend_changed: bool = False,
 ) -> EmailResult:
     """Validate and send one product email, avoiding silent duplicate sends."""
@@ -450,11 +475,6 @@ def process_email_job(
             f"тема: {job.subject}; адресаты: {', '.join(recipients)}; "
             f"вложений: {len(job.attachments)}",
         )
-    if not password:
-        return EmailResult(
-            job.name, "CONFIG_ERROR", "не задан AARI_MAIL_PASSWORD или AARI_EMAIL_PASSWORD в .env"
-        )
-
     try:
         server = _open_smtp(
             smtp_server,
@@ -463,6 +483,7 @@ def process_email_job(
             password,
             smtp_ca_file,
             smtp_security,
+            smtp_auth_mode,
         )
     except (OSError, smtplib.SMTPException) as exc:
         LOG.error(
@@ -537,6 +558,7 @@ def process_email_jobs(
     smtp_ca_file: str | None = None,
     smtp_username: str | None = None,
     smtp_security: str = "auto",
+    smtp_auth_mode: str = "auto",
     resend_changed: bool = False,
 ) -> list[EmailResult]:
     """Process all five product emails with explicit, checked SMTP options."""
@@ -558,6 +580,7 @@ def process_email_jobs(
             smtp_ca_file=smtp_ca_file,
             smtp_username=smtp_username,
             smtp_security=smtp_security,
+            smtp_auth_mode=smtp_auth_mode,
             resend_changed=resend_changed,
         )
         results.append(result)
@@ -590,6 +613,7 @@ def send_weekly_report(
     smtp_ca_file: str | None = None,
     smtp_username: str | None = None,
     smtp_security: str = "auto",
+    smtp_auth_mode: str = "auto",
     report_kind: str = "wednesday",
 ) -> EmailResult:
     """Send a weekly report variant, tracking each variant separately in the normal log."""
@@ -661,11 +685,6 @@ def send_weekly_report(
             f"тема: {subject}; получатели: {', '.join(recipients)}",
         )
 
-    if not password:
-        return EmailResult(
-            "Еженедельный отчёт", "CONFIG_ERROR", "не задан AARI_MAIL_PASSWORD или AARI_EMAIL_PASSWORD в .env"
-        )
-
     message = EmailMessage(policy=policy.SMTP)
     message["From"] = (
         formataddr((sender_name, sender_email)) if sender_name else sender_email
@@ -682,6 +701,7 @@ def send_weekly_report(
             password,
             smtp_ca_file,
             smtp_security,
+            smtp_auth_mode,
         )
     except (OSError, smtplib.SMTPException) as exc:
         LOG.error(
@@ -756,6 +776,7 @@ def process_test_email_suite(
     smtp_ca_file: str | None = None,
     smtp_username: str | None = None,
     smtp_security: str = "auto",
+    smtp_auth_mode: str = "auto",
 ) -> list[EmailResult]:
     """Preview or send six test messages, hard-routed to TEST_RECIPIENTS only."""
     report_body = _body_with_signature(report_body)
@@ -921,16 +942,6 @@ def process_test_email_suite(
         )
         return output
 
-    if not password:
-        return [
-            EmailResult(
-                name,
-                "CONFIG_ERROR",
-                "не задан AARI_MAIL_PASSWORD или AARI_EMAIL_PASSWORD в .env; ничего не отправлено",
-            )
-            for _key, name in ordered
-        ]
-
     try:
         server = _open_smtp(
             smtp_server,
@@ -939,12 +950,14 @@ def process_test_email_suite(
             password,
             smtp_ca_file,
             smtp_security,
+            smtp_auth_mode,
         )
         LOG.info(
-            "TEST_SMTP_AUTH_OK | date=%s | server=%s | port=%s",
+            "TEST_SMTP_CONNECTION_OK | date=%s | server=%s | port=%s | auth_mode=%s",
             release_date.isoformat(),
             smtp_server,
             smtp_port,
+            smtp_auth_mode,
         )
     except (OSError, smtplib.SMTPException) as exc:
         LOG.error(
