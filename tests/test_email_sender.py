@@ -1,5 +1,6 @@
 """Unit tests for product email building and safe-send checks."""
 
+import smtplib
 import tempfile
 import unittest
 from email.message import EmailMessage
@@ -17,6 +18,7 @@ from email_sender import (
     process_test_email_suite,
     TEST_RECIPIENTS,
     _create_smtp_context,
+    _open_smtp,
 )
 
 
@@ -26,6 +28,34 @@ class EmailTests(unittest.TestCase):
     def test_no_ca_file_uses_bbsat_compatible_smtp_default(self):
         """Use smtplib's default context when no CA file is configured."""
         self.assertIsNone(_create_smtp_context(None))
+
+    def test_auto_smtp_on_port25_uses_starttls_before_auth(self):
+        """Port 25 with auto security upgrades to STARTTLS before SMTP authentication."""
+        with patch("email_sender.smtplib.SMTP") as smtp_factory:
+            server = smtp_factory.return_value
+            server.has_extn.return_value = True
+            actual = _open_smtp(
+                "zmail.aari.ru", 25, "sever@aari.ru", "test-password", None, "auto"
+            )
+
+        self.assertIs(actual, server)
+        smtp_factory.assert_called_once_with("zmail.aari.ru", 25, timeout=60)
+        server.ehlo.assert_called()
+        server.starttls.assert_called_once_with(context=None)
+        server.login.assert_called_once_with("sever@aari.ru", "test-password")
+
+    def test_auto_smtp_refuses_port25_without_starttls(self):
+        """Never send SMTP credentials when the server does not advertise STARTTLS."""
+        with patch("email_sender.smtplib.SMTP") as smtp_factory:
+            server = smtp_factory.return_value
+            server.has_extn.return_value = False
+            with self.assertRaises(smtplib.SMTPNotSupportedError):
+                _open_smtp(
+                    "zmail.aari.ru", 25, "sever@aari.ru", "test-password", None, "auto"
+                )
+
+        server.login.assert_not_called()
+        server.close.assert_called_once()
 
     def test_custom_ca_file_is_passed_to_verifying_ssl_context(self):
         """Trust a configured CA file without disabling TLS certificate checks."""
@@ -86,6 +116,26 @@ class EmailTests(unittest.TestCase):
         )
         self.assertEqual(jobs[-1].template.name, "Шаблон ФСБ.eml")
         self.assertTrue(jobs[-1].template.is_file())
+
+    def test_all_active_templates_use_the_standard_sever_signature(self):
+        """Each product template replaces personal/empty bodies with the agreed signature."""
+        template_dir = Path(__file__).resolve().parents[1] / "email_templates"
+        names = (
+            "Обобщенная карта Арктики.eml",
+            "Sigrid запад и восток.eml",
+            "Sigrid Арктика за.eml",
+            "Общая_bmp.eml",
+            "Шаблон ФСБ.eml",
+        )
+        for name in names:
+            with self.subTest(template=name):
+                content = (template_dir / name).read_text(encoding="utf-8")
+                self.assertIn("С уважением,", content)
+                self.assertIn('Центр ледовой и гидрометеорологической информации "Север"', content)
+                self.assertIn("199397, Санкт-Петербург, ул. Беринга, д. 38, литера А", content)
+                self.assertIn("mailto:sever@aari.ru", content)
+                self.assertNotIn("Быченков Юрий Демьянович", content)
+                self.assertNotIn("ydb@aari.ru", content)
 
     def test_mail_test_allowlist_includes_template_reviewer(self):
         """The template reviewer receives only the isolated test messages."""
@@ -359,6 +409,8 @@ class EmailTests(unittest.TestCase):
             )
             self.assertEqual(smtp.send_message.call_count, 6)
             smtp.quit.assert_called_once()
+            report_body = smtp.send_message.call_args_list[-1].args[0].get_content()
+            self.assertIn('Центр ледовой и гидрометеорологической информации "Север"', report_body)
             for call in smtp.send_message.call_args_list:
                 message = call.args[0]
                 self.assertEqual(call.kwargs["to_addrs"], list(TEST_RECIPIENTS))
