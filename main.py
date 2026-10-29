@@ -452,6 +452,11 @@ def resolve_stage(requested: str, run_date: date, now: datetime) -> str | None:
     return None
 
 
+def should_defer_wednesday_email() -> bool:
+    """Check the wall clock after copy jobs, rather than the invocation start time."""
+    return datetime.now().time() < dt_time(14, 50)
+
+
 def build_stage_jobs(run_date: date, stage: str) -> list[CopyJob]:
     """Wednesday's later runs retry old_shore as well as the main distribution."""
     if stage == "wednesday":
@@ -936,7 +941,7 @@ def main() -> int:
             results.append(result)
             LOG.info("[%s] %s: %s", result.status, result.name, result.detail)
 
-        if stage == "wednesday" and not dry_run and now.time() < dt_time(14, 50):
+        if stage == "wednesday" and not dry_run and should_defer_wednesday_email():
             waiting = Result(
                 "Почта",
                 "WAITING",
