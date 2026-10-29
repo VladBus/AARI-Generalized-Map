@@ -180,7 +180,16 @@ class WeeklyOperationsTests(unittest.TestCase):
         """Allow one Wednesday report and one Thursday addendum per release."""
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / "run.log"
-            with patch("email_sender.smtplib.SMTP_SSL") as smtp_factory:
+            log.touch()
+
+            def record_log(message, *args):
+                with log.open("a", encoding="utf-8") as stream:
+                    stream.write((message % args if args else message) + "\\n")
+
+            with (
+                patch("email_sender.LOG.info", side_effect=record_log),
+                patch("email_sender.smtplib.SMTP_SSL") as smtp_factory,
+            ):
                 smtp = smtp_factory.return_value
                 smtp.send_message.return_value = {}
                 common = {
