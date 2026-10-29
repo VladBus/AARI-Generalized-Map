@@ -96,8 +96,8 @@ def _open_smtp(
     """Connect securely; in auto auth mode, use SMTP AUTH only when a password exists."""
     mode = (security or "auto").strip().casefold()
     if mode == "auto":
-        mode = "ssl" if smtp_port == 465 else "starttls"
-    if mode not in {"ssl", "starttls"}:
+        mode = "ssl" if smtp_port == 465 else "opportunistic"
+    if mode not in {"ssl", "starttls", "opportunistic"}:
         raise smtplib.SMTPException(
             f"Неподдерживаемый AARI_SMTP_SECURITY={security!r}; "
             "допустимы auto, ssl или starttls."
@@ -125,12 +125,18 @@ def _open_smtp(
         else:
             server = smtplib.SMTP(smtp_server, smtp_port, timeout=60)
             server.ehlo()
-            if not server.has_extn("starttls"):
+            has_starttls = server.has_extn("starttls")
+            if has_starttls:
+                server.starttls(context=context)
+                server.ehlo()
+            elif mode == "starttls" or should_authenticate:
                 raise smtplib.SMTPNotSupportedError(
-                    "SMTP-сервер не объявил STARTTLS; авторизация без TLS запрещена."
+                    "SMTP-сервер не объявил STARTTLS; защищённая авторизация невозможна."
                 )
-            server.starttls(context=context)
-            server.ehlo()
+            else:
+                LOG.warning(
+                    "SMTP_STARTTLS_UNAVAILABLE | продолжаем без SMTP AUTH по режиму security=auto"
+                )
 
         if should_authenticate:
             if not username:
