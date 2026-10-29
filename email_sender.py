@@ -20,7 +20,11 @@ from typing import Sequence, cast
 LOG = logging.getLogger("aari_generalized_map.email")
 COMPONENTS = (".shp", ".shx", ".dbf", ".prj")
 # Test mail is deliberately redirected to this fixed allowlist, never template recipients.
-TEST_RECIPIENTS = ("vvbusev@aari.ru", "sanovikov@aari.ru")
+TEST_RECIPIENTS = (
+    "vvbusev@aari.ru",
+    "sanovikov@aari.ru",
+    "belgesova@aari.ru",
+)
 
 
 def _create_smtp_context(ca_file: str | None) -> ssl.SSLContext | None:
@@ -103,10 +107,6 @@ def build_email_jobs(
     stamp = chart_date.strftime("%Y%m%d")
     pic, sigrid = source_folder / "PIC", source_folder / "sigrid"
     fsb_template = template_dir / "Шаблон ФСБ.eml"
-    if not fsb_template.is_file():
-        fsb_template = (
-            template_dir / "Шалон ФСБ.eml"
-        )  # Filename currently present in the repository.
     jpg = (Attachment(pic / f"{stamp}.jpg", "pic.jpg"),)
     return [
         EmailJob(
@@ -516,8 +516,15 @@ def send_weekly_report(
     recipient_list: Sequence[str],
     dry_run: bool,
     smtp_ca_file: str | None = None,
+    report_kind: str = "wednesday",
 ) -> EmailResult:
-    """Send one operational report per release Wednesday, tracking delivery in the normal log."""
+    """Send a weekly report variant, tracking each variant separately in the normal log."""
+    if report_kind not in {"wednesday", "thursday"}:
+        return EmailResult(
+            "Еженедельный отчёт",
+            "CONFIG_ERROR",
+            f"неизвестный тип отчёта: {report_kind}",
+        )
     recipients = list(
         dict.fromkeys(address.strip() for address in recipient_list if address.strip())
     )
@@ -542,21 +549,34 @@ def send_weekly_report(
         log_lines = []
 
     for line in log_lines:
-        sent = re.search(r"REPORT_SENT\|(\d{4}-\d{2}-\d{2})\|([0-9a-f]{64})", line)
-        if sent and sent.group(1) == date_text:
+        sent = re.search(
+            r"REPORT_SENT\|(\d{4}-\d{2}-\d{2})\|(?:(wednesday|thursday)\|)?([0-9a-f]{64})",
+            line,
+        )
+        if (
+            sent
+            and sent.group(1) == date_text
+            and (sent.group(2) or "wednesday") == report_kind
+        ):
             return EmailResult(
                 "Еженедельный отчёт",
                 "ALREADY_SENT",
-                "отчёт за эту дату уже передан SMTP",
+                f"отчёт типа {report_kind} за эту дату уже передан SMTP",
             )
         uncertain = re.search(
-            r"REPORT_UNCERTAIN\|(\d{4}-\d{2}-\d{2})\|([0-9a-f]{64})", line
+            r"REPORT_UNCERTAIN\|(\d{4}-\d{2}-\d{2})\|(?:(wednesday|thursday)\|)?([0-9a-f]{64})",
+            line,
         )
-        if uncertain and uncertain.group(1) == date_text:
+        if (
+            uncertain
+            and uncertain.group(1) == date_text
+            and (uncertain.group(2) or "wednesday") == report_kind
+        ):
             return EmailResult(
                 "Еженедельный отчёт",
                 "REVIEW_REQUIRED",
-                "предыдущая передача отчёта не подтверждена; проверьте почту перед повтором",
+                f"предыдущая передача отчёта типа {report_kind} не подтверждена; "
+                "проверьте почту перед повтором",
             )
 
     if dry_run:
@@ -588,7 +608,12 @@ def send_weekly_report(
         )
         server.login(sender_email, password)
     except (OSError, smtplib.SMTPException) as exc:
-        LOG.error("REPORT_FAILED_BEFORE_SEND|%s|%s", date_text, fingerprint)
+        LOG.error(
+            "REPORT_FAILED_BEFORE_SEND|%s|%s|%s",
+            date_text,
+            report_kind,
+            fingerprint,
+        )
         return EmailResult(
             "Еженедельный отчёт",
             "MAIL_ERROR",
@@ -597,25 +622,33 @@ def send_weekly_report(
         )
 
     try:
-        LOG.info("REPORT_ATTEMPT|%s|%s", date_text, fingerprint)
+        LOG.info(
+            "REPORT_ATTEMPT|%s|%s|%s", date_text, report_kind, fingerprint
+        )
         refused = server.send_message(
             message, from_addr=sender_email, to_addrs=recipients
         )
         if refused:
-            LOG.error("REPORT_UNCERTAIN|%s|%s", date_text, fingerprint)
+            LOG.error(
+                "REPORT_UNCERTAIN|%s|%s|%s", date_text, report_kind, fingerprint
+            )
             return EmailResult(
                 "Еженедельный отчёт",
                 "REVIEW_REQUIRED",
                 f"SMTP отклонил часть получателей: {refused}; проверьте доставку вручную",
             )
-        LOG.info("REPORT_SENT|%s|%s", date_text, fingerprint)
+        LOG.info(
+            "REPORT_SENT|%s|%s|%s", date_text, report_kind, fingerprint
+        )
         return EmailResult(
             "Еженедельный отчёт",
             "SENT",
             f"передан SMTP; получатели: {', '.join(recipients)}",
         )
     except (OSError, smtplib.SMTPException) as exc:
-        LOG.error("REPORT_UNCERTAIN|%s|%s", date_text, fingerprint)
+        LOG.error(
+            "REPORT_UNCERTAIN|%s|%s|%s", date_text, report_kind, fingerprint
+        )
         return EmailResult(
             "Еженедельный отчёт",
             "REVIEW_REQUIRED",
