@@ -66,6 +66,18 @@ class EmailTests(unittest.TestCase):
                 )
         smtp_factory.assert_not_called()
 
+    def test_auto_smtp_allows_passwordless_relay_without_starttls(self):
+        """Security=auto may continue without TLS only when SMTP AUTH is not being used."""
+        with patch("email_sender.smtplib.SMTP") as smtp_factory:
+            server = smtp_factory.return_value
+            server.has_extn.return_value = False
+            actual = _open_smtp(
+                "zmail.aari.ru", 25, "sever@aari.ru", "", None, "auto", "auto"
+            )
+        self.assertIs(actual, server)
+        server.starttls.assert_not_called()
+        server.login.assert_not_called()
+
     def test_auto_smtp_refuses_port25_without_starttls(self):
         """Never send SMTP credentials when the server does not advertise STARTTLS."""
         with patch("email_sender.smtplib.SMTP") as smtp_factory:
