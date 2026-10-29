@@ -50,9 +50,10 @@
 | День и время                          | Этап        | Что запланировано                                                                                                        |
 | ------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
 | Среда, 11:00–11:50 — каждые 5 минут   | `oldshore`  | Проверка и размещение SHP старого берега до 12:00                                                                        |
-| Среда, 14:00–14:50 — каждые 5 минут   | `wednesday` | Основные копии и повторная проверка `old_shore`; пять продуктовых писем отправляются только на финальном запуске в 14:50 |
-| Среда, 15:00                          | `report`    | Еженедельный статусный отчёт и подготовка папки следующего выпуска                                                       |
-| Четверг, 14:00–14:50 — каждые 5 минут | `thursday`  | LVP и публикация материалов сайта за предыдущую неделю                                                                   |
+| Среда, 14:00–14:50 — каждые 5 минут   | `wednesday`       | Основные копии и повторная проверка `old_shore`; продуктовые письма отправляются только при запуске в 14:50          |
+| Среда, 15:00                          | `report`          | Еженедельный статусный отчёт и подготовка папки следующего выпуска                                                   |
+| Четверг, 14:00–14:50 — каждые 5 минут | `thursday`        | LVP и публикация материалов сайта за предыдущую неделю                                                               |
+| Четверг, 15:00                        | `thursday-report` | Дополнительный отчёт по статусу после четверговых проверок; получатели те же, что у среды                             |
 
 ⚠️ Это **планируемая конфигурация** из `install_task.ps1`, а не подтверждение того, что задача уже установлена или прошла проверку в Планировщике.
 
@@ -65,8 +66,9 @@
 | `--stage validate`       | Проверка ожидаемого комплекта выпуска без копирования                                                 |
 | `--stage oldshore`       | План выгрузки SHP старого берега                                                                      |
 | `--stage wednesday`      | План среды и пяти продуктовых писем                                                                   |
-| `--stage thursday`       | План LVP и публикации сайта                                                                           |
-| `--stage report`         | План недельного отчёта и папки следующего выпуска                                                     |
+| `--stage thursday`        | План LVP и публикации сайта за предыдущую неделю                                                  |
+| `--stage report`          | План недельного отчёта и папки следующего выпуска                                                |
+| `--stage thursday-report` | Дополнительный отчёт за четверг; без повторного создания папки выпуска                             |
 | `--stage mail-test`      | Изолированная проверка пяти продуктовых писем и недельного отчёта                                     |
 | `--send-test-email`      | Только с `--stage mail-test`: отправляет шесть писем на фиксированный тестовый список                 |
 | `--stage auto`           | Выбор этапа по дню недели и времени запуска                                                           |
@@ -132,6 +134,12 @@ notepad .env
 
 Перед отправкой проверьте `AARI_EMAIL_ADDRESS`, `AARI_REPORT_RECIPIENTS` и адресатов во всех шаблонах `email_templates`. Не включайте рабочую отправку только ради проверки конфигурации — для этого предусмотрен `dry-run`.
 
+### Правила редактирования почтовых шаблонов
+
+Для автоматической отправки используются только пять файлов `.eml` в `email_templates`. Коллеги могут менять текст тела письма и заголовки `To`, `Cc`, `Bcc`, `Reply-To`. Сохраняйте имена файлов и корректный формат EML. Имена вложений и их количество задаются кодом; вложения из EML-шаблонов не используются.
+
+Поле `From` в старом EML — это исторические метаданные и не задаёт отправителя автоматизации. Фактический отправитель берётся из локальной переменной `AARI_EMAIL_ADDRESS` (и `AARI_EMAIL_NAME` для отображаемого имени). Тема письма создаётся программой с актуальным периодом карты, поэтому изменение `Subject` в шаблоне не изменит тему рабочего письма. После любых правок сначала выполните `--stage mail-test` без `--send-test-email`, проверьте журнал и только затем согласуйте тестовую отправку на тестовый список.
+
 Для совместимости с `bbsat` по умолчанию `AARI_SMTP_CA_FILE` не требуется: `smtplib.SMTP_SSL` использует стандартный контекст без проверки сертификата сервера. Соединение при этом шифруется TLS, но приложение не удостоверяется, что подключилось именно к подлинному серверу; при атаке посредника возможен перехват соединения и учётных данных. Это компромисс в пользу совместимости с текущим сервером ААНИИ, а не рекомендуемая настройка для недоверенных сетей.
 
 Если позднее потребуется проверка подлинности сервера, задайте в локальном `.env` путь к доверенному CA-сертификату/цепочке PEM: `AARI_SMTP_CA_FILE=C:/certificates/aari-mail-ca.pem`. В этом режиме сертификат проверяется; без корректного доверенного CA сервер с самоподписанной цепочкой будет отклонён. Не используйте случайный сертификат, снятый с сервера, как доверенный корневой.
@@ -188,7 +196,7 @@ notepad .env
 .\.venv\Scripts\python.exe .\main.py --stage mail-test --date 2026-10-21 --send-test-email
 ```
 
-Будут отправлены **шесть отдельных тестовых писем**: пять продуктовых сообщений с реальными вложениями выбранного выпуска и одно тестовое письмо еженедельного отчёта. Все шесть направляются только на фиксированные адреса `vvbusev@aari.ru` и `sanovikov@aari.ru`. В темах стоит префикс `[TEST]`, а в теле — явная пометка теста. Адресаты из рабочих шаблонов и `AARI_REPORT_RECIPIENTS` не получат эти тестовые письма.
+Будут отправлены **шесть отдельных тестовых писем**: пять продуктовых сообщений с реальными вложениями выбранного выпуска и одно тестовое письмо еженедельного отчёта. Все шесть направляются только на фиксированный тестовый список: `vvbusev@aari.ru`, `sanovikov@aari.ru` и `belgesova@aari.ru`. В темах стоит префикс `[TEST]`, а в теле — явная пометка теста. Адресаты из рабочих шаблонов и `AARI_REPORT_RECIPIENTS` не получат эти тестовые письма.
 
 Режим `mail-test` требует явный `--date` папки выпуска за среду. Он не поддерживает `--execute`, не копирует продуктовые файлы, не создаёт папку следующего выпуска и не изменяет `STATUS.txt`; результаты пишутся в подробный журнал. Если SMTP не подтвердит результат одного из сообщений, отправка следующих остановится. В таком случае проверьте ящики перед повтором: сообщение могло дойти, даже если подтверждение потерялось.
 
@@ -246,7 +254,7 @@ notepad .env
 
 ## 🇬🇧 English summary
 
-Windows automation for distributing already-prepared AARI Arctic overview chart products. It validates expected filenames, shapefile components and approximate sizes; prepares copy jobs for network shares; builds five template-based emails; handles previous-week website material on Thursday; and maintains concise status and detailed logs. QGIS chart compilation remains a manual expert task. The application defaults to dry-run. An isolated `mail-test` stage previews or explicitly sends six `[TEST]` messages only to `vvbusev@aari.ru` and `sanovikov@aari.ru`; it never uses production template recipients for delivery and never copies product files. The Windows Task Scheduler installer exists in the repository and registers a scheduled task in `dry-run` by default; the explicit `-EnableLiveMode` switch adds `--execute` after operational validation.
+Windows automation for distributing already-prepared AARI Arctic overview chart products. It validates expected filenames, shapefile components and approximate sizes; prepares copy jobs for network shares; builds five template-based emails; handles previous-week website material on Thursday; and maintains concise status and detailed logs. QGIS chart compilation remains a manual expert task. The application defaults to dry-run. An isolated `mail-test` stage previews or explicitly sends six `[TEST]` messages only to `vvbusev@aari.ru`, `sanovikov@aari.ru`, and `belgesova@aari.ru`; it never uses production template recipients for delivery and never copies product files. The Windows Task Scheduler installer exists in the repository and registers a scheduled task in `dry-run` by default; the explicit `-EnableLiveMode` switch adds `--execute` after operational validation.
 
 ---
 
