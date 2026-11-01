@@ -663,6 +663,7 @@ def write_status(
     except OSError as exc:
         LOG.error("Не удалось обновить STATUS.txt (%s): %s", STATUS_FILE, exc)
 
+
 def main() -> int:
     """Parse CLI options and run a validation, copy, or report stage."""
     parser = argparse.ArgumentParser(
@@ -771,11 +772,13 @@ def main() -> int:
             smtp_port=int(os.getenv("AARI_SMTP_PORT", "25")),
             smtp_security=os.getenv("AARI_SMTP_SECURITY", "auto").strip(),
             smtp_auth_mode=os.getenv("AARI_SMTP_AUTH_MODE", "auto").strip(),
-            smtp_username=os.getenv("AARI_SMTP_USERNAME", "").strip() or os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
+            smtp_username=os.getenv("AARI_SMTP_USERNAME", "").strip()
+            or os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
             smtp_ca_file=os.getenv("AARI_SMTP_CA_FILE", "").strip() or None,
             sender_email=os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
             sender_name=os.getenv("AARI_EMAIL_NAME", "").strip(),
-            password=os.getenv("AARI_MAIL_PASSWORD", "") or os.getenv("AARI_EMAIL_PASSWORD", ""),
+            password=os.getenv("AARI_MAIL_PASSWORD", "")
+            or os.getenv("AARI_EMAIL_PASSWORD", ""),
             production_report_recipients=report_recipients,
             size_baselines=SIZE_BASELINES,
             min_size_ratio=MIN_SIZE_RATIO,
@@ -817,9 +820,7 @@ def main() -> int:
         folder_result: Result | None = None
 
         if is_thursday_report:
-            subject = (
-                f"Обобщёнка: дополнение к отчёту за {date_phrase} (четверг)"
-            )
+            subject = f"Обобщёнка: дополнение к отчёту за {date_phrase} (четверг)"
             report_body = (
                 "Дополнительный отчёт по автоматизации «Обобщёнка» за четверг.\n"
                 f"Дата формирования: {datetime.now():%Y-%m-%d %H:%M:%S}\n"
@@ -862,11 +863,13 @@ def main() -> int:
             smtp_port=int(os.getenv("AARI_SMTP_PORT", "25")),
             smtp_security=os.getenv("AARI_SMTP_SECURITY", "auto").strip(),
             smtp_auth_mode=os.getenv("AARI_SMTP_AUTH_MODE", "auto").strip(),
-            smtp_username=os.getenv("AARI_SMTP_USERNAME", "").strip() or os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
+            smtp_username=os.getenv("AARI_SMTP_USERNAME", "").strip()
+            or os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
             smtp_ca_file=os.getenv("AARI_SMTP_CA_FILE", "").strip() or None,
             sender_email=os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
             sender_name=os.getenv("AARI_EMAIL_NAME", "").strip(),
-            password=os.getenv("AARI_MAIL_PASSWORD", "") or os.getenv("AARI_EMAIL_PASSWORD", ""),
+            password=os.getenv("AARI_MAIL_PASSWORD", "")
+            or os.getenv("AARI_EMAIL_PASSWORD", ""),
             recipient_list=parse_report_recipients(
                 os.getenv("AARI_REPORT_RECIPIENTS", "")
             ),
@@ -969,11 +972,13 @@ def main() -> int:
                 smtp_port=int(os.getenv("AARI_SMTP_PORT", "25")),
                 smtp_security=os.getenv("AARI_SMTP_SECURITY", "auto").strip(),
                 smtp_auth_mode=os.getenv("AARI_SMTP_AUTH_MODE", "auto").strip(),
-                smtp_username=os.getenv("AARI_SMTP_USERNAME", "").strip() or os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
+                smtp_username=os.getenv("AARI_SMTP_USERNAME", "").strip()
+                or os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
                 smtp_ca_file=os.getenv("AARI_SMTP_CA_FILE", "").strip() or None,
                 sender_email=os.getenv("AARI_EMAIL_ADDRESS", "").strip(),
                 sender_name=os.getenv("AARI_EMAIL_NAME", "").strip(),
-                password=os.getenv("AARI_MAIL_PASSWORD", "") or os.getenv("AARI_EMAIL_PASSWORD", ""),
+                password=os.getenv("AARI_MAIL_PASSWORD", "")
+                or os.getenv("AARI_EMAIL_PASSWORD", ""),
                 size_baselines=SIZE_BASELINES,
                 min_size_ratio=MIN_SIZE_RATIO,
                 max_size_ratio=MAX_SIZE_RATIO,

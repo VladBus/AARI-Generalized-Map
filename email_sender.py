@@ -724,33 +724,25 @@ def send_weekly_report(
         )
 
     try:
-        LOG.info(
-            "REPORT_ATTEMPT|%s|%s|%s", date_text, report_kind, fingerprint
-        )
+        LOG.info("REPORT_ATTEMPT|%s|%s|%s", date_text, report_kind, fingerprint)
         refused = server.send_message(
             message, from_addr=sender_email, to_addrs=recipients
         )
         if refused:
-            LOG.error(
-                "REPORT_UNCERTAIN|%s|%s|%s", date_text, report_kind, fingerprint
-            )
+            LOG.error("REPORT_UNCERTAIN|%s|%s|%s", date_text, report_kind, fingerprint)
             return EmailResult(
                 "Еженедельный отчёт",
                 "REVIEW_REQUIRED",
                 f"SMTP отклонил часть получателей: {refused}; проверьте доставку вручную",
             )
-        LOG.info(
-            "REPORT_SENT|%s|%s|%s", date_text, report_kind, fingerprint
-        )
+        LOG.info("REPORT_SENT|%s|%s|%s", date_text, report_kind, fingerprint)
         return EmailResult(
             "Еженедельный отчёт",
             "SENT",
             f"передан SMTP; получатели: {', '.join(recipients)}",
         )
     except (OSError, smtplib.SMTPException) as exc:
-        LOG.error(
-            "REPORT_UNCERTAIN|%s|%s|%s", date_text, report_kind, fingerprint
-        )
+        LOG.error("REPORT_UNCERTAIN|%s|%s|%s", date_text, report_kind, fingerprint)
         return EmailResult(
             "Еженедельный отчёт",
             "REVIEW_REQUIRED",

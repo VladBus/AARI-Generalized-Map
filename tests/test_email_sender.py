@@ -179,8 +179,12 @@ class EmailTests(unittest.TestCase):
             with self.subTest(template=name):
                 content = (template_dir / name).read_text(encoding="utf-8")
                 self.assertIn("С уважением,", content)
-                self.assertIn('Центр ледовой и гидрометеорологической информации "Север"', content)
-                self.assertIn("199397, Санкт-Петербург, ул. Беринга, д. 38, литера А", content)
+                self.assertIn(
+                    'Центр ледовой и гидрометеорологической информации "Север"', content
+                )
+                self.assertIn(
+                    "199397, Санкт-Петербург, ул. Беринга, д. 38, литера А", content
+                )
                 self.assertIn("mailto:sever@aari.ru", content)
                 self.assertNotIn("Быченков Юрий Демьянович", content)
                 self.assertNotIn("ydb@aari.ru", content)
@@ -273,7 +277,9 @@ class EmailTests(unittest.TestCase):
                 test_notice=True,
             )
         self.assertEqual(recipients, list(TEST_RECIPIENTS))
-        self.assertEqual(message["To"], "vvbusev@aari.ru, sanovikov@aari.ru, belgesova@aari.ru")
+        self.assertEqual(
+            message["To"], "vvbusev@aari.ru, sanovikov@aari.ru, belgesova@aari.ru"
+        )
         self.assertIsNone(message.get("Cc"))
         self.assertIsNone(message.get("Bcc"))
         self.assertIsNone(message.get("Reply-To"))
@@ -459,11 +465,16 @@ class EmailTests(unittest.TestCase):
             self.assertEqual(smtp.send_message.call_count, 6)
             smtp.quit.assert_called_once()
             report_body = smtp.send_message.call_args_list[-1].args[0].get_content()
-            self.assertIn('Центр ледовой и гидрометеорологической информации "Север"', report_body)
+            self.assertIn(
+                'Центр ледовой и гидрометеорологической информации "Север"', report_body
+            )
             for call in smtp.send_message.call_args_list:
                 message = call.args[0]
                 self.assertEqual(call.kwargs["to_addrs"], list(TEST_RECIPIENTS))
-                self.assertEqual(message["To"], "vvbusev@aari.ru, sanovikov@aari.ru, belgesova@aari.ru")
+                self.assertEqual(
+                    message["To"],
+                    "vvbusev@aari.ru, sanovikov@aari.ru, belgesova@aari.ru",
+                )
                 self.assertTrue(str(message["Subject"]).startswith("[TEST]"))
                 self.assertIsNone(message.get("Cc"))
                 self.assertIsNone(message.get("Bcc"))

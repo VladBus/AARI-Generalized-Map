@@ -38,15 +38,11 @@ class WeeklyOperationsTests(unittest.TestCase):
         )
         thursday = date(2026, 10, 22)
         self.assertEqual(
-            main.resolve_stage(
-                "auto", thursday, datetime(2026, 10, 22, 14, 55)
-            ),
+            main.resolve_stage("auto", thursday, datetime(2026, 10, 22, 14, 55)),
             "thursday",
         )
         self.assertEqual(
-            main.resolve_stage(
-                "auto", thursday, datetime(2026, 10, 22, 15, 0)
-            ),
+            main.resolve_stage("auto", thursday, datetime(2026, 10, 22, 15, 0)),
             "thursday-report",
         )
 
