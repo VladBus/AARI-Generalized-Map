@@ -7,7 +7,7 @@
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![OS](https://img.shields.io/badge/OS-Windows-0078D6?logo=windows&logoColor=white)
 ![Mode](https://img.shields.io/badge/default%20mode-dry--run-blue)
-![Deployment](https://img.shields.io/badge/deployment-first%20live%20run%20pending-orange)
+![Deployment](https://img.shields.io/badge/deployment-first%20live%20cycle%20completed-success)
 
 > Автоматизация распространения готовых результатов общей обзорной ледовой карты Арктики ААНИИ: проверка файлов, копирование продуктов на сетевые ресурсы, подготовка почтовых вложений и еженедельный отчёт.
 >
@@ -24,11 +24,11 @@
 | Компонент                                    | Состояние                                                                                                  |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | 🧪 Unit-тесты и CI                           | Последний зафиксированный прогон: 42 теста, `OK`; GitHub Actions запускается при изменениях                |
-| 🗂️ Проверка имён и комплектности             | Автоматические проверки и `dry-run` проходят без ошибок по последним предоставленным журналам              |
-| ✉️ Тест SMTP                                 | Отдельный тест из шести сообщений прошёл; рабочие адресаты изолированы от тестового списка                 |
-| 📋 `STATUS.txt` и `aari_generalized_map.log` | Краткий статус и подробный журнал формируются по этапам выпуска                                            |
-| 🕒 Планировщик Windows                       | На целевом ПК задача зарегистрирована в рабочем режиме `--execute` 29.10.2026; пять триггеров включены     |
-| ⚠️ Первый рабочий цикл                       | Ожидается 04.11.2026–05.11.2026; фактическое выполнение копирования и публикации ещё предстоит подтвердить |
+| 🗂️ Проверка имён и комплектности             | Первый LIVE-прогон выявил ошибки именования old_shore/SIGRID; исходные данные исправлялись оператором |
+| ✉️ Тест SMTP                                 | Шесть тестовых писем ранее доставлены; в первом LIVE-цикле автоматически отправлены 4 из 5 продуктовых писем |
+| 📋 `STATUS.txt` и `aari_generalized_map.log` | Первый цикл 04–05.11.2026 зафиксирован; среда — PARTIAL, четверг — COMPLETED |
+| 🕒 Планировщик Windows                       | Пять триггеров выполнили реальные запуски 04–05.11.2026; LVP и сайт обработаны в четверг |
+| ⚠️ Эксплуатационные замечания                 | Два отказа записи в morspass/sovbez (WinError 5); оператор сообщил о ручном размещении файлов после восстановления доступа |
 
 ## ✅ Что делает программа
 
@@ -42,6 +42,24 @@
 | 📊 Отчётность                | В корневом каталоге источников сохраняет короткий `STATUS.txt` и подробный `aari_generalized_map.log`.                                                                |
 
 Программа **не объединяет и не исправляет геоданные**: подготовка общей обзорной карты в QGIS остаётся ручной операцией.
+
+## 🧾 Результаты первого рабочего цикла (04–05.11.2026)
+
+Первый цикл был выполнен Планировщиком Windows в рабочем режиме. Результаты подтверждены STATUS.txt и подробным журналом:
+
+| Этап | Результат | Фактический итог |
+|---|---|---|
+| Среда, oldshore | COMPLETED | Ошибка имени (латинская O вместо кириллической О) устранена оператором; к 11:50 четыре компонента уже находились в целевом каталоге без необходимости копирования. |
+| Среда, wednesday | PARTIAL | Основные продукты и четыре продуктовых письма обработаны; SIGRID Арктики заблокирован из-за отсутствующего комплекта. Запись в morspass и sovbez завершилась WinError 5 (отказ в доступе). |
+| Среда, report | COMPLETED | Еженедельный отчёт передан на Sat_info@aari.ru; создана папка 2026-11-11 с шестью подпапками. |
+| Четверг, thursday | COMPLETED | Четыре компонента LVP и пять файлов сайта (GIF EN/RU, SIGRID и ZIP) скопированы; повторные запуски распознали их как UNCHANGED. |
+| Четверг, thursday-report | COMPLETED | Дополнительный отчёт передан на Sat_info@aari.ru. |
+
+**Уточнение по средовой рассылке:** журнал подтверждает автоматическую отправку четырёх писем: JPG, SIGRID Запад/Восток, BMP и ФСБ. Письмо SIGRID Арктики было заблокировано из-за отсутствующих вложений. Оператор сообщил, что после исправления исходных файлов отправил его вручную; ручная отправка не регистрируется в MAIL_SENT приложения и не отражена как автоматическая отправка в STATUS.txt.
+
+Отказы WinError 5 относятся к созданию каталогов назначения morspass и sovbez, а не к чтению исходных файлов. Оператор сообщил о восстановлении сетевого доступа и ручном размещении файлов. Сам журнал подтверждает отказ в записи, но не может подтвердить последующее ручное копирование.
+
+COMPLETED у четвергового этапа означает, что четверговые задания завершились без ошибок; это не отменяет исторический результат PARTIAL среды. Для оценки всего выпуска нужно смотреть все этапы, а не только последнюю строку STATUS.txt.
 
 ## 🗓️ График выпуска
 
@@ -256,7 +274,7 @@ notepad .env
 
 ## 🖼️ Скриншоты
 
-Скриншоты зафиксированы 29.10.2026 в Планировщике Windows. Они иллюстрируют состояние зарегистрированной задачи и все пять разрешённых триггеров. Первый запуск рабочего расписания ожидается в среду, 04.11.2026; снимки подтверждают конфигурацию, но не результат ещё не состоявшегося рабочего цикла.
+Скриншоты зафиксированы 29.10.2026 в Планировщике Windows. Они иллюстрируют состояние зарегистрированной задачи и все пять разрешённых триггеров. Первый рабочий цикл фактически выполнен 04–05.11.2026; его результаты и ограничения описаны выше.
 
 **Состояние задачи:**
 
@@ -265,6 +283,17 @@ notepad .env
 **Пять включённых триггеров:**
 
 ![Триггеры по средам и четвергам](images/example_2.png)
+
+
+## 🧭 Дальнейшее развитие (план, не реализовано)
+
+Следующие направления рассматриваются как будущие этапы и не входят в текущую версию:
+
+1. **Перенос с рабочего ПК на сервер.** Рассмотреть Apache NiFi для оркестрации потоков, мониторинга и повторных попыток. Расписание вынести на серверную инфраструктуру. Cron подходит для Linux-сервера, но выбор зависит от ОС, служебной учётной записи, доступа к SMB/SMTP и требований ИТ; сам по себе Cron не заменяет оркестратор.
+2. **Стандартизация имён файлов.** В перспективе заменить кириллические суффиксы регионов В, З, О на однозначные ASCII-обозначения. Переход требует согласования с экспертами, обновления масок, маршрутов, тестов и периода совместимости.
+3. **Контролируемая коррекция имён.** Возможный редактор/валидатор сможет предлагать исправления опечаток, но не должен молча переименовывать или отправлять файлы. Безопасная схема: предложение исправления → подтверждение экспертом → запись старого и нового имени в журнал → продолжение обработки.
+
+Ближайший приоритет — повысить устойчивость текущего процесса: различать временную недоступность сети и отсутствие прав, повторять операции после восстановления доступа, фиксировать ручные исправления и явно показывать незавершённые операции в отчётах.
 
 ## 🔒 Важные соглашения
 
@@ -279,7 +308,7 @@ notepad .env
 
 ## 🇬🇧 English summary
 
-Windows automation for distributing already-prepared AARI Arctic overview-chart products. It validates filenames, shapefile components and approximate sizes; prepares network-share copies; builds five template-based emails; handles previous-week website material and LVP on Thursday; and maintains status and detailed logs. QGIS compilation remains a manual expert task, and direct CLI calls default to dry-run. The isolated `mail-test` stage can preview or explicitly send six `[TEST]` messages to a fixed test allowlist only; it never uses production template recipients for test delivery and never copies product files. As of 29 October 2026, the Windows Task Scheduler task on the target workstation was registered in live mode with five enabled triggers; the first complete live weekly cycle is scheduled for 4–5 November 2026 and is not yet confirmed.
+Windows automation for distributing already-prepared AARI Arctic overview-chart products. It validates filenames, shapefile components and approximate sizes; prepares network-share copies; builds five template-based emails; handles previous-week website material and LVP on Thursday; and maintains status and detailed logs. QGIS compilation remains a manual expert task, and direct CLI calls default to dry-run. The isolated `mail-test` stage can preview or explicitly send six `[TEST]` messages to a fixed test allowlist only; it never uses production template recipients for test delivery and never copies product files. As of 5 November 2026, the Windows Task Scheduler task completed its first live weekly cycle with five enabled triggers. Wednesday distribution was partial because of source filename/component issues and write-access failures to two network destinations; the operator reports that the affected materials were corrected and manually distributed. Thursday LVP and website publication, plus both reports, completed successfully.
 
 ---
 
